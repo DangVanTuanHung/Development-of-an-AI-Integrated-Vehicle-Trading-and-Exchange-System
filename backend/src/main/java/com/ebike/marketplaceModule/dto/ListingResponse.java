@@ -1,0 +1,46 @@
+package com.ebike.marketplaceModule.dto;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+import java.util.List;
+
+public record ListingResponse(
+    Long id,
+    UUID publicId,
+    Long sellerId,
+    String sellerName,
+    String sellerPhone,
+    Long categoryId,
+    Long brandId,
+    String title,
+    String slug,
+    String description,
+    String listingType,
+    String condition,
+    String status,
+    BigDecimal price,
+    boolean negotiable,
+    boolean exchangeAllowed,
+    String province,
+    String district,
+    String addressText,
+    String imageUrl,
+    List<String> images,
+    Integer manufactureYear,
+    Integer registrationYear,
+    Integer mileageKm,
+    String exteriorColor,
+    String fuelType,
+    String transmission,
+    Integer engineCapacityCc,
+    Integer rangeKm,
+    Integer seats,
+    Integer ownersCount,
+    String origin,
+    long viewCount,
+    long favoriteCount,
+    OffsetDateTime publishedAt,
+    OffsetDateTime createdAt,
+    String moderationNote
+) {}
