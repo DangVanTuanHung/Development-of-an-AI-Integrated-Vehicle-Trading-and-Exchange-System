@@ -1,0 +1,37 @@
+{
+  "name": "e-bike-multiplatform",
+  "version": "1.0.0",
+  "description": "Multi-platform MOTIONX e-commerce system",
+  "private": true,
+  "workspaces": [
+    "packages/shared-code",
+    "packages/web",
+    "packages/mobile",
+    "packages/desktop"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "dev": "node scripts/dev.mjs",
+    "dev:backend": "cd backend && mvn spring-boot:run",
+    "dev:web": "npm run dev --workspace=@ebike/web",
+    "dev:mobile": "npm run start --workspace=@ebike/mobile",
+    "dev:desktop": "npm run dev --workspace=@ebike/desktop",
+    "build": "npm run build -ws",
+    "build:backend": "cd backend && mvn clean package",
+    "build:web": "npm -w @ebike/web run build",
+    "build:mobile": "npm -w @ebike/mobile run build",
+    "build:desktop": "npm -w @ebike/desktop run build",
+    "test": "npm run test -ws --if-present",
+    "lint": "npm run lint -ws --if-present",
+    "clean": "npm run clean -ws --if-present && rm -rf node_modules",
+    "list": "npm workspaces list",
+    "dev:stop": "docker compose -f backend/docker-compose.yml stop"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=7.0.0"
+  }
+}
