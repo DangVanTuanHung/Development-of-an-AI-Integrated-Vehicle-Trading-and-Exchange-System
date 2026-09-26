@@ -31,6 +31,7 @@ import MarketplaceListingDetailPage from "../pages/MarketplaceListingDetailPage"
 import PostListingPage from "../pages/GuidedPostListingPage";
 import MarketplaceDealsPage from "../pages/MarketplaceDealsPage";
 import MarketplaceMessagesPage from "../pages/MarketplaceMessagesPage";
+import MarketplaceAppointmentsPage from "../pages/MarketplaceAppointmentsPage";
 import CustomerDashboardPage from "../pages/customer/CustomerDashboardRealPage";
 import CustomerOrdersPage from "../pages/customer/CustomerOrdersSafePage";
 import CustomerOrderDetailPage from "../pages/customer/CustomerOrderDetailPage";
@@ -57,6 +58,7 @@ const router = createBrowserRouter([
       { path: "sell/:id/edit", element: <PostListingPage /> },
       { path: "my-listings", element: <div className="mx-auto max-w-7xl px-5 pb-20 pt-32"><ManagerProductsPage /></div> },
       { path: "deals", element: <MarketplaceDealsPage /> },
+      { path: "appointments", element: <MarketplaceAppointmentsPage /> },
       { path: "messages", element: <MarketplaceMessagesPage /> },
       { path: "product/:id", element: <ProductDetailPage /> },
       { path: "models/:id", element: <ProductDetailPage /> },

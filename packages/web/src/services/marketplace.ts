@@ -43,6 +43,27 @@ export type MarketplaceListing = {
 };
 export type MarketplaceMessage = { publicId: string; senderId: number; senderName: string; messageType: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "LOCATION"; content?: string; attachmentUrl?: string; fileName?: string; mimeType?: string; latitude?: string; longitude?: string; read?: boolean; createdAt: string };
 export type MarketplaceConversation = { publicId: string; listingPublicId: string; listingTitle: string; listingImageUrl?: string; listingPrice?: number; otherName: string; otherAvatarUrl?: string; lastMessage?: string; lastMessageAt?: string; unreadCount: number };
+export type MarketplaceSellerReputation = {
+  seller: { id: number; username: string; firstName?: string; lastName?: string; createdAt: string };
+  summary: { averageRating: number; reviewCount: number };
+  reviews: Array<{ publicId: string; rating: number; comment?: string; reviewerName: string; createdAt: string }>;
+};
+export type MarketplaceAppointment = {
+  publicId: string;
+  listingId: number;
+  listingTitle: string;
+  buyerId: number;
+  sellerId: number;
+  buyerName: string;
+  sellerName: string;
+  scheduledAt: string;
+  location: string;
+  note?: string;
+  sellerNote?: string;
+  status: "REQUESTED" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED";
+  createdAt: string;
+  respondedAt?: string;
+};
 export type MarketplaceDraftAdvice = { title: string; description: string; suggestedPrice?: number; priceLow?: number; priceHigh?: number; completeness: number; missing: string[]; aiUsed: boolean };
 export type MarketplaceVisionResult = { visionAvailable: boolean; title?: string; description?: string; categorySlug?: string; brand?: string; model?: string; variant?: string; manufactureYear?: number; registrationYear?: number; mileageKm?: number; exteriorColor?: string; fuelType?: string; transmission?: string; engineCapacityCc?: number; rangeKm?: number; seats?: number; origin?: string; condition?: string; confidence: number; detectedFeatures: string[]; imageFeedback: string[]; requiredFields: string[] };
 
@@ -109,6 +130,16 @@ export const marketplaceAPI = {
     (await apiClient.post<Record<string, unknown>>(`/marketplace/offers/${offerId}/accept`)).data,
   myTransactions: async () =>
     (await apiClient.get<Array<Record<string, unknown>>>("/marketplace/transactions/mine")).data,
+  createSellerReview: async (transactionId: string, payload: { rating: number; comment?: string }) =>
+    (await apiClient.post<Record<string, unknown>>(`/marketplace/transactions/${transactionId}/seller-review`, payload)).data,
+  sellerReputation: async (sellerId: number) =>
+    (await apiClient.get<MarketplaceSellerReputation>(`/marketplace/sellers/${sellerId}/reputation`)).data,
+  createAppointment: async (listingId: string, payload: { scheduledAt: string; location: string; note?: string }) =>
+    (await apiClient.post<MarketplaceAppointment>(`/marketplace/listings/${listingId}/appointments`, payload)).data,
+  myAppointments: async () =>
+    (await apiClient.get<MarketplaceAppointment[]>("/marketplace/appointments/mine")).data,
+  updateAppointment: async (appointmentId: string, payload: { status: string; note?: string }) =>
+    (await apiClient.patch<MarketplaceAppointment>(`/marketplace/appointments/${appointmentId}`, payload)).data,
   createPayment: async (transactionId: string, stage: "DEPOSIT" | "FINAL", provider: "VNPAY" | "BANK_TRANSFER" | "CASH_ON_DELIVERY") =>
     (await apiClient.post<Record<string, unknown>>(`/marketplace/transactions/${transactionId}/payments`, { stage, provider })).data,
   confirmMarketplacePayment: async (paymentId: string) =>
