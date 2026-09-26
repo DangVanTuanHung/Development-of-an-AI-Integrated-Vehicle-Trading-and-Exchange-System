@@ -56,3 +56,5 @@ __pycache__/
 *.pyc
 .motionx-backup/
 backend/data-backup/ebike_db_*.sql
+
+.history/

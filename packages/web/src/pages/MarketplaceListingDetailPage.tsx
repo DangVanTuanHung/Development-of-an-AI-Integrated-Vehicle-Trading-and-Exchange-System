@@ -1,6 +1,6 @@
 import ListingValuation from "../components/ListingValuation";
 import RelatedMarketplaceListings from "../components/RelatedMarketplaceListings";
-import { ArrowLeft, BadgeCheck, Flag, Heart, MapPin, MessageCircle, Phone, Printer, ShieldCheck } from "lucide-react";
+import { ArrowLeft, BadgeCheck, CalendarDays, Flag, Heart, MapPin, MessageCircle, Phone, Printer, ShieldCheck, Star } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@ebike/shared-code/hooks";
@@ -9,6 +9,7 @@ import {
   marketplaceAPI,
   resolveMarketplaceMediaUrl,
   type MarketplaceListing,
+  type MarketplaceSellerReputation,
 } from "../services/marketplace";
 
 const MarketplaceListingDetailPage = () => {
@@ -22,11 +23,18 @@ const MarketplaceListingDetailPage = () => {
   const [offerMessage, setOfferMessage] = useState("");
   const [offerStatus, setOfferStatus] = useState("");
   const [offerSaving, setOfferSaving] = useState(false);
+  const [appointmentOpen, setAppointmentOpen] = useState(false);
+  const [appointmentDate, setAppointmentDate] = useState("");
+  const [appointmentLocation, setAppointmentLocation] = useState("");
+  const [appointmentNote, setAppointmentNote] = useState("");
+  const [appointmentStatus, setAppointmentStatus] = useState("");
+  const [appointmentSaving, setAppointmentSaving] = useState(false);
   const [chatStatus, setChatStatus] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [phoneVisible, setPhoneVisible] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
   const [saved, setSaved] = useState(false);
+  const [reputation, setReputation] = useState<MarketplaceSellerReputation | null>(null);
   const [actionStatus, setActionStatus] = useState("");
   const [loanPercent, setLoanPercent] = useState(50);
   const [loanMonths, setLoanMonths] = useState(60);
@@ -35,12 +43,20 @@ const MarketplaceListingDetailPage = () => {
     let active = true;
     setListing(null); setError(""); setActiveImage(0); setPhoneVisible(false);
     setOfferOpen(false); setOfferAmount(""); setOfferMessage(""); setOfferStatus("");
+    setAppointmentOpen(false); setAppointmentDate(""); setAppointmentLocation(""); setAppointmentNote(""); setAppointmentStatus("");
     setChatStatus(""); setActionStatus(""); setSaved(false);
     if (id) marketplaceAPI.detail(id)
       .then(value => { if (active) setListing(value); })
       .catch(() => { if (active) setError("Không thể tải tin đăng."); });
     return () => { active = false; };
   }, [id]);
+  useEffect(() => {
+    let active = true;
+    if (listing?.sellerId) marketplaceAPI.sellerReputation(listing.sellerId)
+      .then(value => { if (active) setReputation(value); })
+      .catch(() => { if (active) setReputation(null); });
+    return () => { active = false; };
+  }, [listing?.sellerId]);
   useEffect(() => {
     let active = true;
     setSaved(false);
@@ -146,6 +162,26 @@ const MarketplaceListingDetailPage = () => {
       );
     } finally {
       setChatLoading(false);
+    }
+  };
+
+  const submitAppointment = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!appointmentDate || !appointmentLocation.trim()) return;
+    setAppointmentSaving(true);
+    setAppointmentStatus("");
+    try {
+      await marketplaceAPI.createAppointment(listing.publicId, {
+        scheduledAt: new Date(appointmentDate).toISOString(),
+        location: appointmentLocation,
+        note: appointmentNote,
+      });
+      setAppointmentStatus("Đã gửi yêu cầu đặt lịch. Người bán sẽ xác nhận trong trung tâm giao dịch.");
+      setAppointmentOpen(false);
+    } catch (appointmentError) {
+      setAppointmentStatus(appointmentError instanceof Error ? appointmentError.message : "Không thể đặt lịch lúc này.");
+    } finally {
+      setAppointmentSaving(false);
     }
   };
 
@@ -271,6 +307,7 @@ const MarketplaceListingDetailPage = () => {
                   <BadgeCheck size={14} />
                   Người bán đã xác thực
                 </p>
+                {reputation ? <p className="mt-1 flex items-center gap-1 text-xs text-amber-600"><Star size={13} fill="currentColor" />{Number(reputation.summary.averageRating).toFixed(2)} / 5 · {reputation.summary.reviewCount} đánh giá</p> : null}
                 {!listing.sellerPhone ? (
                   <p className="mt-1 text-xs text-slate-400">
                     Người bán chưa cập nhật số điện thoại
@@ -315,6 +352,24 @@ const MarketplaceListingDetailPage = () => {
               <ShieldCheck size={19} />
               {isOwner ? "Không thể tự gửi đề nghị" : "Gửi đề nghị & đặt cọc"}
             </button>
+            <button
+              type="button"
+              disabled={isOwner || listing.status !== "PUBLISHED"}
+              onClick={() => {
+                if (!isAuthenticated) { navigate("/auth", { state: { from: `/listing/${listing.publicId}` } }); return; }
+                setAppointmentOpen((value) => !value);
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-violet-200 bg-white px-6 py-4 font-bold text-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CalendarDays size={19} />Đặt lịch xem xe
+            </button>
+            {appointmentStatus ? <p className="mt-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{appointmentStatus}</p> : null}
+            {appointmentOpen ? <form onSubmit={submitAppointment} className="mt-4 space-y-3 rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+              <label className="block text-xs font-bold uppercase tracking-wide text-violet-700">Ngày và giờ<input required type="datetime-local" value={appointmentDate} onChange={(event) => setAppointmentDate(event.target.value)} min={new Date(Date.now() + 3600000).toISOString().slice(0, 16)} className="mt-2 w-full rounded-xl border border-violet-100 bg-white px-4 py-3 text-sm text-slate-900" /></label>
+              <label className="block text-xs font-bold uppercase tracking-wide text-violet-700">Địa điểm xem xe<input required maxLength={500} value={appointmentLocation} onChange={(event) => setAppointmentLocation(event.target.value)} placeholder="Ví dụ: 12 Nguyễn Trãi, Quận 1" className="mt-2 w-full rounded-xl border border-violet-100 bg-white px-4 py-3 text-sm text-slate-900" /></label>
+              <textarea maxLength={2000} value={appointmentNote} onChange={(event) => setAppointmentNote(event.target.value)} rows={2} placeholder="Ghi chú cho người bán" className="w-full resize-none rounded-xl border border-violet-100 bg-white px-4 py-3 text-sm" />
+              <button disabled={appointmentSaving} className="w-full rounded-xl bg-violet-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{appointmentSaving ? "Đang gửi..." : "Gửi yêu cầu đặt lịch"}</button>
+            </form> : null}
             {!isAuthenticated ? (
               <p className="mt-3 text-center text-sm text-violet-700">
                 Bạn cần đăng nhập để trao đổi hoặc gửi đề nghị.

@@ -28,6 +28,7 @@ const Header = () => {
   const visibleNavItems = [
     ...navItems.filter((item) => isAuthenticated || item.to !== "/favorites"),
     ...(isAuthenticated ? [{ to: "/messages", label: "Tin nhắn", end: false }] : []),
+    ...(isAuthenticated ? [{ to: "/appointments", label: "Lịch xem xe", end: false }] : []),
     ...(canAccessAdmin ? [{ to: "/admin", label: "Admin", end: false }] : []),
     ...(isAuthenticated ? [{ to: "/my-listings", label: "Tin của tôi", end: false }] : []),
     ...(isManager ? [{ to: "/manager", label: "Manager", end: false }] : [])
