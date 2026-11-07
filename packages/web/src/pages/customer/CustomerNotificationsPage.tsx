@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { notificationAPI } from "@ebike/shared-code/api";
 import type { UserNotification } from "@ebike/shared-code/types";
+import {useNavigate} from "react-router-dom";
+import {useMarketplaceNotifications} from "../../hooks/useMarketplaceNotifications";
 import SectionShell from "../../components/common/SectionShell";
 
 const typeLabel: Record<string, string> = {
+  MARKETPLACE:"Marketplace",
   ORDER_STATUS: "Đơn hàng",
   PAYMENT_SUCCESS: "Thanh toán thành công",
   PAYMENT_FAILED: "Thanh toán thất bại"
@@ -33,6 +36,7 @@ const normalizeNotificationText = (value: string) =>
   ].reduce((text, [search, replacement]) => replaceText(text, search, replacement), value);
 
 const CustomerNotificationsPage = () => {
+  const navigate=useNavigate();
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -53,6 +57,7 @@ const CustomerNotificationsPage = () => {
   useEffect(() => {
     void loadNotifications();
   }, []);
+  useMarketplaceNotifications(true,()=>{void loadNotifications();});
 
   const markAsRead = async (notification: UserNotification) => {
     if (notification.read) {
@@ -78,8 +83,8 @@ const CustomerNotificationsPage = () => {
   return (
     <SectionShell
       eyebrow="Thông báo"
-      title="Cập nhật mới nhất về đơn hàng và thanh toán."
-      description="Theo dõi các thay đổi trạng thái đơn hàng, kết quả thanh toán và đánh dấu thông báo đã đọc."
+      title="Thông báo Marketplace và đơn hàng"
+      description="Theo dõi tin đăng, tin nhắn, lịch hẹn, giao dịch và phản hồi hỗ trợ."
     >
       <div className="px-6 py-8">
         <div className="mb-5 flex justify-end">
@@ -100,7 +105,7 @@ const CustomerNotificationsPage = () => {
               <button
                 key={notification.id}
                 type="button"
-                onClick={() => void markAsRead(notification)}
+                onClick={() => {void markAsRead(notification);if(notification.targetUrl)navigate(notification.targetUrl);}}
                 className={`w-full rounded-lg border p-5 text-left transition hover:bg-black/5 ${
                   notification.read ? "border-outline-variant/15 bg-white" : "border-primary/25 bg-primary/5"
                 }`}

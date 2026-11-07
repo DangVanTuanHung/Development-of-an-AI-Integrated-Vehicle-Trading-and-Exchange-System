@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Car, Plus } from "lucide-react";
+import ListingStatistics from "../../components/ListingStatistics";
 import { marketplaceAPI, formatMarketplacePrice, resolveMarketplaceMediaUrl, type MarketplaceListing } from "../../services/marketplace";
 
-const statusLabels: Record<string, string> = { DRAFT: "Bản nháp", PENDING_REVIEW: "Chờ kiểm duyệt", SUSPENDED: "Đình chỉ", RESERVED: "Đang giao dịch", PUBLISHED: "Đang đăng", SOLD: "Đã bán", HIDDEN: "Đã ẩn", REJECTED: "Bị từ chối", ARCHIVED: "Đã lưu trữ" };
+const statusLabels: Record<string, string> = { DRAFT: "Bản nháp", PENDING_REVIEW: "Chờ kiểm duyệt", SUSPENDED: "Đình chỉ", RESERVED: "Đang giao dịch", PUBLISHED: "Đang đăng", SOLD: "Đã bán", EXCHANGED: "Đã trao đổi", HIDDEN: "Tạm ẩn", REJECTED: "Bị từ chối", ARCHIVED: "Đã gỡ", EXPIRED: "Hết hạn" };
 
 export default function ManagerProductsPage() {
   const management=useLocation().pathname.startsWith("/manager");
@@ -26,6 +27,13 @@ export default function ManagerProductsPage() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Không thể đăng tin."); }
     finally { setPublishing(null); }
   };
+  const manage = async (id: string, action: "hide" | "relist" | "sold" | "renew") => {
+    if(action==="sold"&&!window.confirm("Đánh dấu xe đã bán? Tin sẽ ngừng nhận đề nghị mới.")) return;
+    setPublishing(id);setError("");
+    try { await marketplaceAPI.manageListing(id,action);await load(); }
+    catch(cause) { setError(cause instanceof Error?cause.message:"Không thể cập nhật tin đăng."); }
+    finally { setPublishing(null); }
+  };
   return <div className="space-y-6">
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div><h2 className="text-2xl font-bold">Tin bán xe của tôi</h2><p className="mt-2 text-sm text-slate-500">Đăng xe với ảnh, giá và thông tin của bạn. Tin chỉ hiển thị sau khi được kiểm duyệt.</p></div>
@@ -44,6 +52,13 @@ export default function ManagerProductsPage() {
           <p className="text-xl font-bold text-violet-700">{formatMarketplacePrice(item.price)}</p>
           <p className="text-sm text-slate-500">{[item.district, item.province].filter(Boolean).join(", ")}</p>
           <p className="text-sm text-slate-500">Đăng bởi {item.sellerName}</p>
+          <div className="flex flex-wrap gap-3 text-sm">
+            {["PUBLISHED","PENDING_REVIEW"].includes(item.status)&&<button disabled={publishing!==null} onClick={()=>void manage(item.publicId,"hide")} className="font-semibold text-slate-600">Tạm ẩn</button>}
+            {["HIDDEN","ARCHIVED","EXPIRED","REJECTED"].includes(item.status)&&<button disabled={publishing!==null} onClick={()=>void manage(item.publicId,"relist")} className="font-semibold text-violet-700">Đăng lại từ bản nháp</button>}
+            {["PUBLISHED","EXPIRED"].includes(item.status)&&<button disabled={publishing!==null} onClick={()=>void manage(item.publicId,"renew")} className="font-semibold text-violet-700">Gia hạn 30 ngày</button>}
+            {["PUBLISHED","HIDDEN"].includes(item.status)&&<button disabled={publishing!==null} onClick={()=>void manage(item.publicId,"sold")} className="font-semibold text-emerald-700">Đánh dấu đã bán</button>}
+          </div>
+          <ListingStatistics id={item.publicId} />
           <div className="flex flex-wrap gap-3 border-t pt-3"><Link to={`/listing/${item.publicId}`} className="font-semibold text-violet-700">Xem tin</Link>
             {["DRAFT","REJECTED"].includes(item.status) && <button disabled={publishing !== null} onClick={() => void publish(item.publicId)} className="font-semibold text-violet-700 disabled:opacity-50">{publishing === item.publicId ? "Đang gửi..." : "Gửi duyệt"}</button>}
             {["DRAFT","REJECTED","PUBLISHED","PENDING_REVIEW"].includes(item.status) && <Link to={management ? `/manager/products/${item.publicId}/edit` : `/sell/${item.publicId}/edit`} className="font-semibold text-violet-700">Sửa tin</Link>}

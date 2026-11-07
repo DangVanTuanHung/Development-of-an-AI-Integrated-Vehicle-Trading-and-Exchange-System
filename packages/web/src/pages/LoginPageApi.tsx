@@ -1,6 +1,6 @@
 import type { ChangeEvent, FormEvent } from "react";
 import { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { ArrowRight, Eye, EyeOff, Lock, Mail, Zap } from "lucide-react";
 import { useAuth } from "@ebike/shared-code/hooks";
 
@@ -12,6 +12,8 @@ type LoginFormData = {
 
 const LoginPageApi = () => {
   const navigate = useNavigate();
+  const routeState = useLocation().state as {notice?:string;from?:string}|null;
+  const notice = routeState?.notice;
   const { login, isLoading } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -57,13 +59,13 @@ const LoginPageApi = () => {
         password: formData.password
       }).unwrap();
 
-      navigate(
-        result.roles.includes("ADMIN")
+      const defaultPath = result.roles.includes("ADMIN")
           ? "/admin"
           : result.roles.includes("MANAGER")
             ? "/manager"
-            : "/customer/profile"
-      );
+            : "/customer/profile";
+      const from = routeState?.from;
+      navigate(typeof from === "string" && from.startsWith("/") && !from.startsWith("//") && !["/auth","/forgot-password"].includes(from) ? from : defaultPath);
     } catch (loginError) {
       const message =
         loginError instanceof Error ? loginError.message : "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.";
@@ -121,6 +123,7 @@ const LoginPageApi = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {notice && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</p>}
             {error ? (
               <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
                 {error}
@@ -151,7 +154,7 @@ const LoginPageApi = () => {
                 <label htmlFor="password" className="mono-label block text-muted-foreground">
                   Mật khẩu
                 </label>
-                <button type="button" className="text-xs font-bold text-primary transition hover:text-primary-container">
+                <button type="button" onClick={() => navigate("/forgot-password")} className="text-xs font-bold text-primary transition hover:text-primary-container">
                   Quên mật khẩu?
                 </button>
               </div>

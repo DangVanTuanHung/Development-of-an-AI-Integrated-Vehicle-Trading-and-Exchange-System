@@ -1,68 +1,15 @@
-import { CalendarDays, Check, Clock3, MapPin, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
-import { useAuth } from "@ebike/shared-code/hooks";
-import { marketplaceAPI, type MarketplaceAppointment } from "../services/marketplace";
-
-const statusLabel: Record<MarketplaceAppointment["status"], string> = {
-  REQUESTED: "Chờ xác nhận",
-  CONFIRMED: "Đã xác nhận",
-  DECLINED: "Đã từ chối",
-  COMPLETED: "Đã hoàn thành",
-  CANCELLED: "Đã hủy",
-};
-
-const MarketplaceAppointmentsPage = () => {
-  const { user, isAuthenticated, isBootstrapping } = useAuth();
-  const [appointments, setAppointments] = useState<MarketplaceAppointment[]>([]);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState("");
-
-  const load = async () => {
-    setError("");
-    try {
-      setAppointments(await marketplaceAPI.myAppointments());
-    } catch {
-      setError("Không thể tải lịch hẹn.");
-    }
-  };
-
-  useEffect(() => {
-    if (isAuthenticated) void load();
-  }, [isAuthenticated]);
-
-  const update = async (appointment: MarketplaceAppointment, status: string) => {
-    setBusy(appointment.publicId);
-    setError("");
-    try {
-      await marketplaceAPI.updateAppointment(appointment.publicId, { status });
-      await load();
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Không thể cập nhật lịch hẹn.");
-    } finally {
-      setBusy("");
-    }
-  };
-
-  if (isBootstrapping) return <div className="grid min-h-screen place-items-center pt-24">Đang kiểm tra đăng nhập...</div>;
-  if (!isAuthenticated) return <Navigate to="/auth" replace state={{ from: "/appointments" }} />;
-
-  return <main className="min-h-screen bg-[#fff8f5] px-5 pb-24 pt-32"><div className="mx-auto max-w-5xl">
-    <p className="text-xs font-bold uppercase tracking-[.2em] text-violet-600">Marketplace</p>
-    <h1 className="mt-2 text-4xl font-black tracking-tight text-slate-950">Lịch xem xe</h1>
-    <p className="mt-3 text-slate-500">Theo dõi và phản hồi các yêu cầu xem xe của bạn.</p>
-    {error ? <p className="mt-6 rounded-2xl bg-red-50 p-4 text-red-700">{error}</p> : null}
-    <div className="mt-8 grid gap-4">{appointments.length ? appointments.map((appointment) => {
-      const isBuyer = Number(appointment.buyerId) === Number(user?.id);
-      const isSeller = Number(appointment.sellerId) === Number(user?.id);
-      return <article key={appointment.publicId} className="rounded-3xl border border-violet-100 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-lg font-extrabold text-slate-950">{appointment.listingTitle}</p><p className="mt-1 text-sm text-slate-500">{isSeller ? `Người mua: ${appointment.buyerName}` : `Người bán: ${appointment.sellerName}`}</p></div><span className="rounded-full bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700">{statusLabel[appointment.status]}</span></div>
-        <div className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2"><p className="flex items-center gap-2"><Clock3 size={16} className="text-violet-600" />{new Date(appointment.scheduledAt).toLocaleString("vi-VN")}</p><p className="flex items-center gap-2"><MapPin size={16} className="text-violet-600" />{appointment.location}</p></div>
-        {appointment.note ? <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Ghi chú: {appointment.note}</p> : null}
-        <div className="mt-5 flex flex-wrap gap-2">{isSeller && appointment.status === "REQUESTED" ? <><button disabled={busy === appointment.publicId} onClick={() => void update(appointment, "CONFIRMED")} className="flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-bold text-white"><Check size={15} />Xác nhận</button><button disabled={busy === appointment.publicId} onClick={() => void update(appointment, "DECLINED")} className="flex items-center gap-2 rounded-full bg-red-50 px-4 py-2 text-sm font-bold text-red-700"><X size={15} />Từ chối</button></> : null}{(isBuyer || isSeller) && ["REQUESTED", "CONFIRMED"].includes(appointment.status) ? <button disabled={busy === appointment.publicId} onClick={() => void update(appointment, "CANCELLED")} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600">Hủy lịch</button> : null}{(isBuyer || isSeller) && appointment.status === "CONFIRMED" ? <button disabled={busy === appointment.publicId} onClick={() => void update(appointment, "COMPLETED")} className="rounded-full bg-violet-600 px-4 py-2 text-sm font-bold text-white">Đánh dấu đã xem xe</button> : null}</div>
-      </article>;
-    }) : <div className="rounded-3xl border border-dashed border-violet-200 p-10 text-center text-slate-500"><CalendarDays className="mx-auto mb-3 text-violet-300" />Chưa có lịch xem xe nào.</div>}</div>
-  </div></main>;
-};
-
-export default MarketplaceAppointmentsPage;
+import {useEffect,useState,type FormEvent} from "react";
+import {Navigate} from "react-router-dom";
+import {useAuth} from "@ebike/shared-code/hooks";
+import {marketplaceAPI,type MarketplaceAppointment} from "../services/marketplace";
+import {errorMessage} from "../services/community";
+import {actionButton} from "../components/CommunityActions";
+const labels:Record<string,string>={REQUESTED:"Chờ xác nhận",CONFIRMED:"Đã xác nhận",DECLINED:"Đã từ chối",COMPLETED:"Đã hoàn thành",CANCELLED:"Đã hủy"};
+export default function MarketplaceAppointmentsPage(){
+ const {user,isAuthenticated,isBootstrapping}=useAuth();const [items,setItems]=useState<MarketplaceAppointment[]>([]),[error,setError]=useState(""),[busy,setBusy]=useState(false),[editing,setEditing]=useState<MarketplaceAppointment|null>(null),[date,setDate]=useState(""),[place,setPlace]=useState(""),[note,setNote]=useState("");
+ const load=async()=>{try{setItems(await marketplaceAPI.myAppointments());setError("");}catch(e){setError(errorMessage(e));}};useEffect(()=>{if(isAuthenticated)void load();},[isAuthenticated]);
+ const update=async(a:MarketplaceAppointment,status:string)=>{setBusy(true);try{await marketplaceAPI.updateAppointment(a.publicId,{status,revision:a.revision});await load();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}};
+ const propose=async(e:FormEvent)=>{e.preventDefault();if(!editing)return;setBusy(true);try{await marketplaceAPI.updateAppointment(editing.publicId,{status:"RESCHEDULE",scheduledAt:new Date(date).toISOString(),location:place,note,revision:editing.revision});setEditing(null);await load();}catch(err){setError(errorMessage(err));}finally{setBusy(false);}};
+ if(isBootstrapping)return <p className="pt-32">Đang kiểm tra đăng nhập...</p>;if(!isAuthenticated)return <Navigate to="/auth" replace state={{from:"/appointments"}}/>;
+ return <main className="px-5 pb-20 pt-32"><div className="mx-auto max-w-5xl"><h1 className="text-3xl font-bold">Lịch xem xe</h1><p className="my-3">Hai bên có thể đề xuất lịch khác; bên nhận đề xuất cần xác nhận lại. Nhắc lịch được gửi trong vòng một giờ trước hẹn.</p><button className={actionButton} onClick={()=>void load()}>Làm mới lịch hẹn</button>{error&&<p role="alert" className="my-4 text-red-700">{error}</p>}<div className="mt-5 space-y-4">{items.map(a=>{const active=["REQUESTED","CONFIRMED"].includes(a.status);const future=new Date(a.scheduledAt).getTime()>Date.now();return <article key={a.publicId} className="rounded-2xl border bg-white p-5"><h2 className="text-xl font-bold">{a.listingTitle}</h2><p className="mt-2">{labels[a.status]} · {new Date(a.scheduledAt).toLocaleString("vi-VN")} · {a.location}</p><p className="mt-2 text-sm">Người mua: {a.buyerName} · Người bán: {a.sellerName}</p><p className="mt-2 text-sm">Đề xuất bởi: {Number(a.proposedBy)===Number(user?.id)?"Bạn":Number(a.proposedBy)===Number(a.buyerId)?a.buyerName:a.sellerName}</p>{a.note&&<p className="mt-2 whitespace-pre-wrap">Ghi chú: {a.note}</p>}{a.sellerNote&&<p className="mt-2 whitespace-pre-wrap">Phản hồi: {a.sellerNote}</p>}<div className="mt-4 flex flex-wrap gap-3">{a.status==="REQUESTED"&&Number(a.proposedBy)!==Number(user?.id)&&<><button className={actionButton} disabled={busy||!future} onClick={()=>void update(a,"CONFIRMED")}>Xác nhận lịch</button><button className={actionButton} disabled={busy} onClick={()=>void update(a,"DECLINED")}>Từ chối lịch</button></>}{active&&<><button className={actionButton} disabled={busy} onClick={()=>{setEditing(a);setDate("");setPlace(a.location);setNote("");}}>Đề xuất giờ khác</button><button className={actionButton} disabled={busy} onClick={()=>void update(a,"CANCELLED")}>Hủy lịch</button></>}{a.status==="CONFIRMED"&&<button className={actionButton} disabled={busy||future} onClick={()=>void update(a,"COMPLETED")}>Đánh dấu đã xem xe</button>}</div>{active&&!future&&<p className="mt-3 text-sm text-amber-700">Lịch đã đến giờ hoặc quá hạn. Có thể cập nhật kết quả, hủy hoặc đề xuất lịch mới.</p>}{editing?.publicId===a.publicId&&<form onSubmit={propose} className="mt-4 grid gap-3 rounded-xl bg-violet-50 p-4 sm:grid-cols-2"><label>Ngày giờ mới<input aria-label="Ngày giờ xem xe mới" type="datetime-local" required value={date} onChange={e=>setDate(e.target.value)} className="input-base"/></label><label>Địa điểm mới<input aria-label="Địa điểm xem xe mới" required maxLength={500} value={place} onChange={e=>setPlace(e.target.value)} className="input-base"/></label><textarea aria-label="Ghi chú đổi lịch" maxLength={2000} value={note} onChange={e=>setNote(e.target.value)} className="input-base"/><button disabled={busy} className={actionButton}>Gửi đề xuất lịch mới</button><button type="button" className={actionButton} onClick={()=>setEditing(null)}>Đóng</button></form>}</article>;})}{!items.length&&<p>Chưa có lịch xem xe.</p>}</div></div></main>;
+}

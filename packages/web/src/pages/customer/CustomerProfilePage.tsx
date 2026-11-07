@@ -5,6 +5,7 @@ import { useAuth } from "@ebike/shared-code/hooks";
 import type { UserAddressRequest, UserAddressResponse, UserProfileResponse } from "@ebike/shared-code/types";
 import SectionShell from "../../components/common/SectionShell";
 import { Camera } from "lucide-react";
+import AccountVerificationPanel from "../../components/AccountVerificationPanel";
 import { resolveMarketplaceMediaUrl } from "../../services/marketplace";
 
 const CustomerProfilePage = () => {
@@ -293,7 +294,8 @@ const CustomerProfilePage = () => {
         confirmPassword
       });
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      setPasswordSuccess("Đã đổi mật khẩu.");
+      await logout();
+      navigate("/auth", { replace: true, state: { notice: "Đã đổi mật khẩu. Hãy đăng nhập bằng mật khẩu mới." } });
     } catch (changeError) {
       setPasswordError(changeError instanceof Error ? changeError.message : "Không thể đổi mật khẩu.");
     } finally {
@@ -308,6 +310,7 @@ const CustomerProfilePage = () => {
       description="Quản lý thông tin cá nhân, trạng thái tài khoản và các quyền hiện đang được gán."
     >
       <div className="grid gap-6 px-0 py-6 lg:grid-cols-12">
+        {profile && <AccountVerificationPanel profile={profile} onVerified={setProfile} />}
         <section className="rounded-lg border border-outline-variant/15 bg-white p-6 shadow-sm lg:col-span-8">
           {loading ? (
             <p className="text-muted-foreground">Đang tải hồ sơ...</p>

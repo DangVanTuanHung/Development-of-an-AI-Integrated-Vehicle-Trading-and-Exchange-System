@@ -1,64 +1,32 @@
-import { CheckCircle2, CreditCard, HandCoins, RefreshCw, Star } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { useAuth } from "@ebike/shared-code/hooks";
-import { formatMarketplacePrice, marketplaceAPI } from "../services/marketplace";
+import {useEffect,useState} from "react";
+import {Link,Navigate} from "react-router-dom";
+import {useAuth} from "@ebike/shared-code/hooks";
+import {tradeAPI,tradeError,tradeLabels,refundPolicy,type Offer,type TradeSummary} from "../services/trades";
+import {formatMarketplacePrice as money} from "../services/marketplace";
+import OfferComposer from "../components/OfferComposer";
 
-type Row = Record<string, unknown>;
-const money = (value: unknown) => formatMarketplacePrice(Number(value || 0));
-const valueOrMissing = (value: unknown) => value ? String(value) : "Chưa cập nhật";
-
-const MarketplaceDealsPage = () => {
-  const { user } = useAuth();
-  const [offers, setOffers] = useState<Row[]>([]);
-  const [transactions, setTransactions] = useState<Row[]>([]);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState("");
-  const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rating: string; comment: string }>>({});
-  const [reviewMessage, setReviewMessage] = useState("");
-  const load = async () => {
-    setError("");
-    try { const [nextOffers, nextTransactions] = await Promise.all([marketplaceAPI.myOffers(), marketplaceAPI.myTransactions()]); setOffers(nextOffers); setTransactions(nextTransactions); }
-    catch { setError("Vui lòng đăng nhập để xem thương lượng và giao dịch của bạn."); }
-  };
-  useEffect(() => { void load(); }, []);
-  const act = async (key: string, action: () => Promise<unknown>) => { setBusy(key); setError(""); try { await action(); await load(); } catch { setError("Thao tác chưa thể hoàn tất. Hãy kiểm tra vai trò hoặc trạng thái giao dịch."); } finally { setBusy(""); } };
-  const transactionActions = (tx: Row) => {
-    const key = String(tx.publicId);
-    const isBuyer = Number(tx.buyerId) === Number(user?.id);
-    const isSeller = Number(tx.sellerId) === Number(user?.id);
-    const hasPendingPayment = tx.paymentStatus === "PENDING" || tx.paymentStatus === "PROCESSING";
-    if (isSeller && hasPendingPayment && tx.paymentPublicId) {
-      return <button disabled={busy === key} onClick={() => void act(key, () => marketplaceAPI.confirmMarketplacePayment(String(tx.paymentPublicId)))} className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-bold text-white">{tx.paymentProvider === "CASH_ON_DELIVERY" ? "Xác nhận đã nhận tiền mặt & bàn giao" : "Xác nhận đã nhận chuyển khoản"}</button>;
-    }
-    if (isBuyer && tx.status === "DEPOSIT_PENDING" && !tx.paymentPublicId) {
-      return <><button disabled={busy === key} onClick={() => void act(key, () => marketplaceAPI.createPayment(key, "DEPOSIT", "BANK_TRANSFER"))} className="rounded-full bg-violet-600 px-5 py-3 text-sm font-bold text-white">Chuyển khoản tiền cọc</button><button disabled={busy === key} onClick={() => void act(key, () => marketplaceAPI.createPayment(key, "FINAL", "CASH_ON_DELIVERY"))} className="rounded-full border border-violet-200 bg-white px-5 py-3 text-sm font-bold text-violet-700">Tiền mặt khi nhận xe</button></>;
-    }
-    if (isBuyer && ["DEPOSIT_PAID", "INSPECTION_PENDING"].includes(String(tx.status)) && tx.paymentStage === "DEPOSIT" && tx.paymentStatus === "PAID") {
-      return <button disabled={busy === key} onClick={() => void act(key, () => marketplaceAPI.createPayment(key, "FINAL", "BANK_TRANSFER"))} className="rounded-full bg-violet-600 px-5 py-3 text-sm font-bold text-white">Chuyển khoản phần còn lại</button>;
-    }
-    if (isBuyer && tx.status === "FULLY_PAID") {
-      return <button disabled={busy === key} onClick={() => void act(key, () => marketplaceAPI.confirmHandover(key))} className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-bold text-white">Xác nhận đã nhận xe</button>;
-    }
-    if (isBuyer && tx.status === "COMPLETED") {
-      const draft = reviewDrafts[key] || { rating: "5", comment: "" };
-      return <div className="w-full rounded-2xl border border-amber-100 bg-amber-50 p-4 sm:min-w-[420px]">
-        <p className="flex items-center gap-2 text-sm font-bold text-amber-800"><Star size={16} fill="currentColor" />Đánh giá người bán</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-[120px_1fr]">
-          <select value={draft.rating} onChange={(event) => setReviewDrafts((current) => ({ ...current, [key]: { ...draft, rating: event.target.value } }))} className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm">
-            {[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating} sao</option>)}
-          </select>
-          <textarea value={draft.comment} onChange={(event) => setReviewDrafts((current) => ({ ...current, [key]: { ...draft, comment: event.target.value } }))} maxLength={2000} rows={2} placeholder="Nhận xét về giao dịch" className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm" />
-        </div>
-        <button disabled={busy === `review-${key}`} onClick={() => void act(`review-${key}`, async () => { await marketplaceAPI.createSellerReview(key, { rating: Number(draft.rating), comment: draft.comment }); setReviewMessage("Đã gửi đánh giá người bán."); })} className="mt-3 rounded-full bg-amber-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Gửi đánh giá</button>
-      </div>;
-    }
-    return null;
-  };
-  return <main className="min-h-screen bg-[#fff8f5] px-5 pb-24 pt-32"><div className="mx-auto max-w-6xl"><div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-violet-600">Trung tâm giao dịch</p><h1 className="mt-2 text-4xl font-black tracking-tight text-slate-950">Thương lượng & thanh toán</h1><p className="mt-3 text-slate-500">Theo dõi đề nghị, tiền cọc và tiến độ hoàn tất ngay trên MOTIONX.</p></div><button onClick={() => void load()} className="flex items-center gap-2 rounded-full border bg-white px-5 py-3 font-bold"><RefreshCw size={17}/>Làm mới</button></div>{error ? <div className="mt-6 rounded-2xl bg-red-50 p-4 text-red-700">{error} <Link className="font-bold underline" to="/auth">Đăng nhập</Link></div> : null}{reviewMessage ? <div className="mt-6 rounded-2xl bg-emerald-50 p-4 text-emerald-700">{reviewMessage}</div> : null}<section className="mt-10"><h2 className="flex items-center gap-2 text-2xl font-extrabold"><HandCoins className="text-fuchsia-500"/>Đề nghị của tôi</h2><div className="mt-5 grid gap-4">{offers.length ? offers.map((offer) => <article key={String(offer.publicId)} className="rounded-3xl border border-violet-100 bg-white p-6 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="font-extrabold text-slate-900">{String(offer.listingTitle)}</p><p className="mt-1 text-sm text-slate-500">Đề nghị {money(offer.amount)} · Cọc {money(offer.depositAmount)}</p>
-{Number(offer.sellerId) === Number(user?.id) ? <div className="mt-4 grid gap-2 rounded-xl bg-violet-50 p-4 text-sm text-slate-600 sm:grid-cols-2"><p><b>Họ tên:</b> {valueOrMissing(offer.buyerName)}</p><p><b>Số điện thoại:</b> {valueOrMissing(offer.buyerPhone)}</p><p><b>Email:</b> {valueOrMissing(offer.buyerEmail)}</p><p><b>Nơi ở:</b> {valueOrMissing(offer.buyerAddress)}</p></div> : null}
-</div>
-<div className="flex items-center gap-3"><span className="rounded-full bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700">{String(offer.status)}</span>{offer.status === "PENDING" && Number(offer.sellerId) === Number(user?.id) ? <button disabled={busy === String(offer.publicId)} onClick={() => void act(String(offer.publicId), () => marketplaceAPI.acceptOffer(String(offer.publicId)))} className="rounded-full bg-slate-950 px-4 py-2 text-sm font-bold text-white">Chấp nhận</button> : null}</div></div></article>) : <p className="rounded-3xl border border-dashed p-8 text-center text-slate-500">Chưa có đề nghị nào.</p>}</div></section><section className="mt-12"><h2 className="flex items-center gap-2 text-2xl font-extrabold"><CreditCard className="text-violet-600"/>Giao dịch đang xử lý</h2><div className="mt-5 grid gap-4">{transactions.length ? transactions.map((tx) => <article key={String(tx.publicId)} className="rounded-3xl border border-violet-100 bg-white p-6 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-5"><div><p className="text-xs font-bold uppercase tracking-wider text-violet-600">{String(tx.transactionNumber)}</p><p className="mt-2 text-lg font-extrabold">{String(tx.listingTitle)}</p><p className="mt-1 text-sm text-slate-500">Giá chốt {money(tx.agreedPrice)} · Cọc {money(tx.depositAmount)}</p>{tx.paymentReference ? <p className="mt-2 text-xs text-slate-500">Mã thanh toán: <b>{String(tx.paymentReference)}</b> · {tx.paymentProvider === "CASH_ON_DELIVERY" ? "Tiền mặt khi nhận xe" : tx.paymentStage === "DEPOSIT" ? "Chuyển khoản tiền cọc" : "Chuyển khoản phần còn lại"} · {money(tx.paymentAmount)}</p> : null}</div><div className="flex flex-wrap items-center gap-3"><span className="flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-700"><CheckCircle2 size={15}/>{String(tx.status)}</span>{transactionActions(tx)}</div></div></article>) : <p className="rounded-3xl border border-dashed p-8 text-center text-slate-500">Chưa có giao dịch nào.</p>}</div></section></div></main>;
-};
-export default MarketplaceDealsPage;
-
+function OfferCard({offer,userId,onRefresh}:{offer:Offer;userId:number;onRefresh:()=>Promise<void>}){
+  const [counter,setCounter]=useState(false);const [accepted,setAccepted]=useState(false);const [busy,setBusy]=useState(false);const [error,setError]=useState("");
+  const act=async(action:()=>Promise<unknown>)=>{setBusy(true);setError("");try{await action();await onRefresh();}catch(e){setError(tradeError(e));}finally{setBusy(false);}};
+  const pending=offer.status==="PENDING";const proposer=Number(offer.proposedBy)===userId;
+  return <article className="rounded-2xl border border-violet-100 bg-white p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div><Link to={`/listing/${offer.listingPublicId}`} className="text-lg font-bold text-violet-800">{offer.listingTitle}</Link><p className="mt-2 text-sm text-slate-500">Người mua: {offer.buyerName} · Người bán: {offer.sellerName}</p></div><span className="rounded-full bg-violet-50 px-3 py-2 text-xs font-bold">{tradeLabels[offer.status]||offer.status}</span></div>
+    <p className="mt-3 font-bold">Giá trị xe: {money(Number(offer.amount))} · Cọc: {money(Number(offer.depositAmount))}</p>
+    {offer.exchangeListingPublicId&&<p className="mt-2 text-sm">Xe trao đổi: <Link className="font-bold text-violet-700 underline" to={`/listing/${offer.exchangeListingPublicId}`}>{offer.exchangeListingTitle}</Link> · Giá trị {money(Number(offer.exchangeValue))}</p>}
+    {offer.message&&<p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">{offer.message}</p>}<p className="mt-3 text-xs text-slate-400">Hết hạn: {new Date(offer.expiresAt).toLocaleString("vi-VN")}{offer.parentOfferId?" · Đề nghị thương lượng thay thế":""}</p>
+    {error&&<p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-red-700">{error}</p>}
+    {pending&&<div className="mt-4 space-y-3">{proposer?<button disabled={busy} onClick={()=>void act(()=>tradeAPI.withdraw(offer.publicId))} className="rounded-xl border px-4 py-2 font-bold">Rút đề nghị</button>:<><details className="text-sm text-slate-500"><summary className="cursor-pointer font-bold">Điều kiện hủy và hoàn tiền</summary><p className="mt-2 leading-6">{refundPolicy}</p></details><label className="flex gap-2 text-sm"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/>Tôi đồng ý điều kiện hủy và hoàn tiền.</label><div className="flex flex-wrap gap-3"><button disabled={busy||!accepted} onClick={()=>void act(()=>tradeAPI.accept(offer.publicId))} className="rounded-xl bg-violet-700 px-4 py-2 font-bold text-white disabled:opacity-40">Chấp nhận đề nghị</button><button disabled={busy} onClick={()=>setCounter(x=>!x)} className="rounded-xl border px-4 py-2 font-bold">Thương lượng lại</button><button disabled={busy} onClick={()=>void act(()=>tradeAPI.reject(offer.publicId))} className="rounded-xl border border-red-200 px-4 py-2 font-bold text-red-700">Từ chối</button></div></>}
+    {counter&&<OfferComposer listingId={offer.listingPublicId} price={Number(offer.amount)} counter={offer} onSuccess={()=>{setCounter(false);void onRefresh();}} onCancel={()=>setCounter(false)}/>}</div>}
+  </article>;
+}
+export default function MarketplaceDealsPage(){
+  const {user,isAuthenticated,isBootstrapping}=useAuth();const [offers,setOffers]=useState<Offer[]>([]);const [transactions,setTransactions]=useState<TradeSummary[]>([]);const [error,setError]=useState("");const [loading,setLoading]=useState(true);const [filter,setFilter]=useState("ALL");
+  const load=async()=>{setError("");try{const [o,t]=await Promise.all([tradeAPI.offers(),tradeAPI.mine()]);setOffers(o);setTransactions(t);}catch(e){setError(tradeError(e));}finally{setLoading(false);}};
+  useEffect(()=>{if(isAuthenticated)void load();},[isAuthenticated]);
+  if(isBootstrapping)return <p className="pt-32 text-center">Đang kiểm tra đăng nhập...</p>;
+  if(!isAuthenticated)return <Navigate to="/auth" replace state={{from:"/deals"}}/>;
+  const uid=Number(user?.id);const visible=offers.filter(o=>filter==="ALL"||filter==="PENDING"&&o.status==="PENDING"||filter==="SENT"&&Number(o.proposedBy)===uid||filter==="RECEIVED"&&Number(o.proposedBy)!==uid);
+  return <main className="min-h-screen bg-[#fff8f5] px-5 pb-24 pt-32"><div className="mx-auto max-w-6xl"><div className="flex items-center justify-between gap-4"><h1 className="text-3xl font-extrabold">Đề nghị & giao dịch</h1><button onClick={()=>void load()} className="rounded-xl border bg-white px-4 py-2 font-bold">Làm mới</button></div><p className="mt-3 text-slate-500">Thương lượng, theo dõi tiền cọc và bàn giao với xác nhận của cả hai bên.</p>{error&&<p role="alert" className="mt-5 rounded-xl bg-red-50 p-4 text-red-700">{error}</p>}
+    <section className="mt-8"><h2 className="text-2xl font-bold">Giao dịch của tôi</h2><div className="mt-4 grid gap-4 md:grid-cols-2">{transactions.map(tx=><Link key={tx.publicId} to={`/deals/${tx.publicId}`} className="rounded-2xl border border-violet-100 bg-white p-5 hover:border-violet-400"><p className="text-xs font-bold text-violet-700">{tx.transactionNumber}</p><h3 className="mt-2 text-lg font-bold">{tx.listingTitle}</h3><p className="mt-2 text-sm">{tradeLabels[tx.status]||tx.status}</p><p className="mt-2 text-sm text-slate-500">Tiền thanh toán/bù: {money(Number(tx.payableAmount))}</p><span className="mt-4 block text-sm font-bold text-violet-700">Mở chi tiết giao dịch →</span></Link>)}{!transactions.length&&!loading&&<p className="p-5 text-slate-500">Chưa có giao dịch.</p>}</div></section>
+    <section className="mt-10"><div className="flex flex-wrap justify-between gap-3"><h2 className="text-2xl font-bold">Đề nghị mua / trao đổi</h2><select aria-label="Lọc đề nghị" value={filter} onChange={e=>setFilter(e.target.value)} className="rounded-xl border bg-white px-4 py-2"><option value="ALL">Tất cả</option><option value="PENDING">Đang chờ</option><option value="SENT">Tôi gửi</option><option value="RECEIVED">Tôi nhận</option></select></div><div className="mt-4 space-y-4">{visible.map(offer=><OfferCard key={offer.publicId} offer={offer} userId={uid} onRefresh={load}/>)}{!visible.length&&!loading&&<p className="p-5 text-slate-500">Không có đề nghị phù hợp.</p>}{loading&&<p role="status">Đang tải...</p>}</div></section>
+  </div></main>;
+}

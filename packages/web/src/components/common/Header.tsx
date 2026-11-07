@@ -6,7 +6,7 @@ import NotificationBell from "./NotificationBell";
 import { marketplaceAPI } from "../../services/marketplace";
 
 const navItems = [
-  { to: "/products", label: "Khám phá" },
+  { to: "/search", label: "Khám phá" },
   { to: "/sell", label: "Đăng tin" },
   { to: "/deals", label: "Giao dịch" },
   { to: "/support", label: "Hỗ trợ" },
@@ -31,6 +31,7 @@ const Header = () => {
     ...(isAuthenticated ? [{ to: "/appointments", label: "Lịch xem xe", end: false }] : []),
     ...(canAccessAdmin ? [{ to: "/admin", label: "Admin", end: false }] : []),
     ...(isAuthenticated ? [{ to: "/my-listings", label: "Tin của tôi", end: false }] : []),
+    ...(isAuthenticated ? [{ to: "/marketplace-account", label: "Cá nhân", end: false }] : []),
     ...(isManager ? [{ to: "/manager", label: "Manager", end: false }] : [])
   ];
 
@@ -55,7 +56,7 @@ const Header = () => {
         setUnreadMessages(conversations.reduce((total, item) => total + Number(item.unreadCount || 0), 0));
         const listingAttentionStatuses = new Set(["DRAFT", "PENDING_REVIEW", "REJECTED"]);
         const actionableOffers = offers.filter((offer) =>
-          ["PENDING", "COUNTERED"].includes(String(offer.status)) && Number(offer.sellerId) === Number(user?.id)
+          offer.status === "PENDING" && Number(offer.proposedBy) !== Number(user?.id)
         ).length;
         const activeTransactions = transactions.filter((transaction) =>
           !["COMPLETED", "CANCELLED", "REFUNDED"].includes(String(transaction.status))

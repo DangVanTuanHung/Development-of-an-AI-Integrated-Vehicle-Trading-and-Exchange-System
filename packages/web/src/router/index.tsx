@@ -1,3 +1,9 @@
+import TradeDetailPage from "../pages/TradeDetailPage";
+import MarketplaceSearchPage from "../pages/MarketplaceSearchPage";
+import MarketplaceComparePage from "../pages/MarketplaceComparePage";
+import MarketplaceAccountPage from "../pages/MarketplaceAccountPage";
+import CommunityModerationPage from "../pages/manager/CommunityModerationPage";
+import MarketplaceTradesPage from "../pages/manager/MarketplaceTradesPage";
 import AdminVehicleCatalogPage from "../pages/admin/AdminVehicleCatalogPage";
 import MarketplaceOperationsPage from "../pages/manager/MarketplaceOperationsPage";
 import { createBrowserRouter, Navigate } from "react-router-dom";
@@ -23,6 +29,8 @@ import ProductDetailPage from "../pages/ProductDetailPage";
 import ProductsPage from "../pages/ProductsPage";
 import CompareProductsPage from "../pages/CompareProductsPage";
 import SignupPage from "../pages/SignupPage";
+import PasswordResetPage from "../pages/PasswordResetPage";
+import SellerProfilePage from "../pages/SellerProfilePage";
 import SupportPage from "../pages/SupportPagePremium";
 import SupportConsolePage from "../pages/SupportConsolePage";
 import InformationPage from "../pages/InformationPage";
@@ -50,14 +58,17 @@ const router = createBrowserRouter([
       { index: true, element: <MarketplaceBrowsePage /> },
       { path: "auth", element: <LoginPage /> },
       { path: "signup", element: <SignupPage /> },
+      { path: "forgot-password", element: <PasswordResetPage /> },
       { path: "products", element: <MarketplaceBrowsePage /> },
       { path: "models", element: <MarketplaceBrowsePage /> },
       { path: "store", element: <ProductsPage /> },
       { path: "listing/:id", element: <MarketplaceListingDetailPage /> },
+      { path: "seller/:id", element: <SellerProfilePage /> },
       { path: "sell", element: <PostListingPage /> },
       { path: "sell/:id/edit", element: <PostListingPage /> },
       { path: "my-listings", element: <div className="mx-auto max-w-7xl px-5 pb-20 pt-32"><ManagerProductsPage /></div> },
       { path: "deals", element: <MarketplaceDealsPage /> },
+      { path: "deals/:id", element: <TradeDetailPage /> },
       { path: "appointments", element: <MarketplaceAppointmentsPage /> },
       { path: "messages", element: <MarketplaceMessagesPage /> },
       { path: "product/:id", element: <ProductDetailPage /> },
@@ -69,6 +80,9 @@ const router = createBrowserRouter([
       { path: "support", element: <SupportPage /> },
       { path: "info/:slug", element: <InformationPage /> },
       { path: "compare", element: <CompareProductsPage /> },
+      { path: "search", element: <MarketplaceSearchPage /> },
+      { path: "compare-listings", element: <MarketplaceComparePage /> },
+      { path: "marketplace-account", element: <MarketplaceAccountPage /> },
       { path: "chatbot", element: <ChatbotPage /> }
     ]
   },
@@ -97,8 +111,9 @@ const router = createBrowserRouter([
     element: <AdminLayout />,
     children: [
       { path: "listings", element: <MarketplaceOperationsPage view="listings" /> },
-      { path: "transactions", element: <MarketplaceOperationsPage view="transactions" /> },
-      { path: "reports", element: <MarketplaceOperationsPage view="reports" /> },
+      { path: "transactions", element: <MarketplaceTradesPage /> },
+      { path: "transactions/:id", element: <TradeDetailPage management /> },
+      { path: "reports", element: <CommunityModerationPage /> },
 
       { index: true, element: <AdminDashboardPage /> },
       { path: "pricing", element: <AdminPricingPromotionsPage /> },
@@ -115,7 +130,8 @@ const router = createBrowserRouter([
     element: <ManagerLayout />,
     children: [
       { path: "listings", element: <MarketplaceOperationsPage view="listings" /> },
-      { path: "transactions", element: <MarketplaceOperationsPage view="transactions" /> },
+      { path: "transactions", element: <MarketplaceTradesPage /> },
+      { path: "transactions/:id", element: <TradeDetailPage management /> },
 
       { index: true, element: <MarketplaceOperationsPage /> },
       { path: "orders", element: <Navigate to="/manager/transactions" replace /> },
@@ -126,7 +142,7 @@ const router = createBrowserRouter([
       { path: "products", element: <ManagerProductsPage /> },
       { path: "products/new", element: <PostListingPage management /> },
       { path: "products/:id/edit", element: <PostListingPage management /> },
-      { path: "reports", element: <MarketplaceOperationsPage view="reports" /> },
+      { path: "reports", element: <CommunityModerationPage /> },
       { path: "support", element: <SupportConsolePage /> }
     ]
   },

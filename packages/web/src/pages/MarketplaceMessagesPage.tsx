@@ -1,3 +1,5 @@
+import {communityAPI,errorMessage} from "../services/community";
+import {ReportButton,actionButton} from "../components/CommunityActions";
 import { useAuth } from "@ebike/shared-code/hooks";
 import { FileText, ImagePlus, MapPin, MessageCircle, Search, Send, X, ZoomIn } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -247,6 +249,7 @@ const MarketplaceMessagesPage = () => {
               </div>
             ) : null}
             {otherTyping ? <div className="border-b border-violet-50 bg-violet-50/50 px-5 py-2 text-xs font-semibold text-violet-700">{activeConversation?.otherName} đang gõ<span className="animate-pulse">...</span></div> : null}
+            {activeConversation&&<div className="flex flex-wrap gap-2 border-b bg-white p-3"><button className={actionButton} onClick={async()=>{try{await communityAPI.block(activeConversation.otherId,!activeConversation.blocked);setConversations(await marketplaceAPI.conversations());}catch(e){setError(errorMessage(e));}}}>{activeConversation.blocked?"Bỏ chặn người dùng":"Chặn người dùng"}</button><ReportButton type="USER" target={String(activeConversation.otherId)}/>{activeConversation.blocked&&<p className="text-sm text-amber-700">Một bên đã chặn liên hệ. Không thể gửi tin mới.</p>}</div>}
             <div ref={messagesListRef} onScroll={() => { const element = messagesListRef.current; if (element) allowAutoScrollRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5 sm:p-7">
               {selected ? (
                 messages.map((message) => {
@@ -264,6 +267,7 @@ const MarketplaceMessagesPage = () => {
                         >
                           {message.senderName}
                         </p>
+                        {!mine&&<ReportButton type="MESSAGE" target={message.publicId}/>}
                         {message.messageType === "IMAGE" && message.attachmentUrl ? <button type="button" onClick={() => setPreviewImage(resolveMarketplaceMediaUrl(message.attachmentUrl!))} className="group relative mt-2 block overflow-hidden rounded-xl"><img src={resolveMarketplaceMediaUrl(message.attachmentUrl)} alt={message.fileName || "Ảnh"} className="max-h-72 object-contain" /><span className="absolute inset-0 grid place-items-center bg-black/0 text-white opacity-0 transition group-hover:bg-black/25 group-hover:opacity-100"><ZoomIn size={28} /></span></button> : null}
                         {message.messageType === "VIDEO" && message.attachmentUrl ? <video src={resolveMarketplaceMediaUrl(message.attachmentUrl)} controls className="mt-2 max-h-72 rounded-xl" /> : null}
                         {message.messageType === "DOCUMENT" && message.attachmentUrl ? <a href={resolveMarketplaceMediaUrl(message.attachmentUrl)} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 rounded-xl bg-white/15 p-3 font-semibold"><FileText size={20} />{message.fileName || "Tải tệp đính kèm"}</a> : null}
