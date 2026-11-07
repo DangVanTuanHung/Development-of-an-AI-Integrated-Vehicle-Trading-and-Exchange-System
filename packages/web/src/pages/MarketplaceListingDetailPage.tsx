@@ -1,3 +1,7 @@
+import OfferComposer from "../components/OfferComposer";
+import ListingComments from "../components/ListingComments";
+import {ReportButton} from "../components/CommunityActions";
+import {discoveryAPI,readComparison,comparisonKey} from "../services/community";
 import ListingValuation from "../components/ListingValuation";
 import RelatedMarketplaceListings from "../components/RelatedMarketplaceListings";
 import { ArrowLeft, BadgeCheck, CalendarDays, Flag, Heart, MapPin, MessageCircle, Phone, Printer, ShieldCheck, Star } from "lucide-react";
@@ -19,10 +23,6 @@ const MarketplaceListingDetailPage = () => {
   const [listing, setListing] = useState<MarketplaceListing | null>(null);
   const [error, setError] = useState("");
   const [offerOpen, setOfferOpen] = useState(false);
-  const [offerAmount, setOfferAmount] = useState("");
-  const [offerMessage, setOfferMessage] = useState("");
-  const [offerStatus, setOfferStatus] = useState("");
-  const [offerSaving, setOfferSaving] = useState(false);
   const [appointmentOpen, setAppointmentOpen] = useState(false);
   const [appointmentDate, setAppointmentDate] = useState("");
   const [appointmentLocation, setAppointmentLocation] = useState("");
@@ -42,7 +42,7 @@ const MarketplaceListingDetailPage = () => {
   useEffect(() => {
     let active = true;
     setListing(null); setError(""); setActiveImage(0); setPhoneVisible(false);
-    setOfferOpen(false); setOfferAmount(""); setOfferMessage(""); setOfferStatus("");
+    setOfferOpen(false);
     setAppointmentOpen(false); setAppointmentDate(""); setAppointmentLocation(""); setAppointmentNote(""); setAppointmentStatus("");
     setChatStatus(""); setActionStatus(""); setSaved(false);
     if (id) marketplaceAPI.detail(id)
@@ -65,6 +65,11 @@ const MarketplaceListingDetailPage = () => {
       .catch(() => undefined);
     return () => { active = false; };
   }, [id, isAuthenticated]);
+  useEffect(() => {
+    if(listing&&isAuthenticated)void discoveryAPI.view(listing.publicId).catch(()=>undefined);
+    if (listing && ["PUBLISHED","RESERVED","SOLD","EXCHANGED"].includes(listing.status))
+      void marketplaceAPI.recordEngagement(listing.publicId,"VIEW").catch(()=>undefined);
+  }, [listing?.publicId, listing?.status, isAuthenticated]);
   if (error)
     return (
       <div className="grid min-h-screen place-items-center pt-24 text-red-600">
@@ -84,6 +89,8 @@ const MarketplaceListingDetailPage = () => {
       ? [listing.imageUrl]
       : [];
   const specs = [
+    ["Hãng xe", listing.brandName],
+    ["Dòng xe", listing.modelName],
     ["Năm sản xuất", listing.manufactureYear],
     ["Năm đăng ký", listing.registrationYear],
     [
@@ -116,32 +123,6 @@ const MarketplaceListingDetailPage = () => {
     ? `${listing.sellerPhone.slice(0, 6)}${"*".repeat(Math.max(4, listing.sellerPhone.length - 6))}`
     : "";
 
-  const submitOffer = async (event: FormEvent) => {
-    event.preventDefault();
-    const amount = Number(offerAmount);
-    if (!amount || amount <= 0) return;
-    setOfferSaving(true);
-    setOfferStatus("");
-    try {
-      await marketplaceAPI.createOffer(listing.publicId, {
-        amount,
-        depositAmount: Math.round(amount * 0.1),
-        message: offerMessage,
-      });
-      setOfferStatus(
-        "Đề nghị đã được gửi. Tiền cọc dự kiến là 10% và chỉ thanh toán sau khi người bán chấp nhận.",
-      );
-    } catch (submitError) {
-      setOfferStatus(
-        submitError instanceof Error
-          ? submitError.message
-          : "Không thể gửi đề nghị lúc này.",
-      );
-    } finally {
-      setOfferSaving(false);
-    }
-  };
-
   const openConversation = async () => {
     if (!isAuthenticated) {
       navigate("/auth", { state: { from: `/listing/${listing.publicId}` } });
@@ -153,6 +134,7 @@ const MarketplaceListingDetailPage = () => {
       const conversation = await marketplaceAPI.openConversation(
         listing.publicId,
       );
+      void marketplaceAPI.recordEngagement(listing.publicId,"CONTACT").catch(()=>undefined);
       navigate(`/messages?conversation=${encodeURIComponent(conversation.publicId)}`);
     } catch (conversationError) {
       setChatStatus(
@@ -196,7 +178,7 @@ const MarketplaceListingDetailPage = () => {
           Quay lại marketplace
         </Link>
         {listing.status !== "PUBLISHED" && <div className="mb-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
-          {listing.status === "PENDING_REVIEW" ? "Tin đang chờ kiểm duyệt và chưa hiển thị công khai." : listing.status === "REJECTED" ? "Tin cần chỉnh sửa trước khi gửi duyệt lại." : listing.status === "DRAFT" ? "Đây là bản nháp chưa gửi duyệt." : listing.status === "SUSPENDED" ? "Tin đã bị đình chỉ." : listing.status === "SOLD" ? "Xe đã bán." : listing.status === "RESERVED" ? "Xe đang có giao dịch." : "Tin không còn hiển thị."}
+          {listing.status === "PENDING_REVIEW" ? "Tin đang chờ kiểm duyệt và chưa hiển thị công khai." : listing.status === "REJECTED" ? "Tin cần chỉnh sửa trước khi gửi duyệt lại." : listing.status === "DRAFT" ? "Đây là bản nháp chưa gửi duyệt." : listing.status === "SUSPENDED" ? "Tin đã bị đình chỉ." : listing.status === "EXCHANGED" ? "Xe đã trao đổi." : listing.status === "SOLD" ? "Xe đã bán." : listing.status === "RESERVED" ? "Xe đang có giao dịch." : "Tin không còn hiển thị."}
           {listing.moderationNote && <p className="mt-2">{listing.moderationNote}</p>}
         </div>}
         <div className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,.9fr)]">
@@ -293,8 +275,7 @@ const MarketplaceListingDetailPage = () => {
             </p>
             <p className="mt-4 flex items-center gap-2 text-sm text-slate-500">
               <MapPin size={16} />
-              {listing.district ? `${listing.district}, ` : ""}
-              {listing.province}
+              {[listing.addressText, listing.district, listing.province].filter(Boolean).join(", ")}
             </p>
             <ListingValuation publicId={listing.publicId} price={listing.price} />
             <div className="mt-5 flex items-center gap-3 border-y border-violet-50 py-4">
@@ -302,10 +283,10 @@ const MarketplaceListingDetailPage = () => {
                 {listing.sellerName.charAt(0)}
               </span>
               <div>
-                <p className="font-bold">{listing.sellerName}</p>
-                <p className="flex items-center gap-1 text-xs text-emerald-600">
-                  <BadgeCheck size={14} />
-                  Người bán đã xác thực
+                <Link to={`/seller/${listing.sellerId}`} className="font-bold text-violet-700 hover:underline">{listing.sellerName}</Link>
+                <p className={`flex items-center gap-1 text-xs ${listing.sellerVerified ? "text-emerald-600" : "text-slate-500"}`}>
+                  {listing.sellerVerified ? <BadgeCheck size={14} /> : null}
+                  {listing.sellerVerified ? "Tài khoản đã xác minh" : "Tài khoản chưa xác minh"}
                 </p>
                 {reputation ? <p className="mt-1 flex items-center gap-1 text-xs text-amber-600"><Star size={13} fill="currentColor" />{Number(reputation.summary.averageRating).toFixed(2)} / 5 · {reputation.summary.reviewCount} đánh giá</p> : null}
                 {!listing.sellerPhone ? (
@@ -327,7 +308,7 @@ const MarketplaceListingDetailPage = () => {
               {listing.sellerPhone ? (
                 <button
                   type="button"
-                  onClick={() => setPhoneVisible((value) => !value)}
+                  onClick={() => { if(!phoneVisible) void marketplaceAPI.recordEngagement(listing.publicId,"CONTACT").catch(()=>undefined); setPhoneVisible(value=>!value); }}
                   className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-5 py-4 text-sm font-extrabold text-white shadow-lg shadow-violet-500/20 transition hover:brightness-105"
                   aria-label={phoneVisible ? "Ẩn số điện thoại" : "Hiện số điện thoại"}
                 >
@@ -345,7 +326,6 @@ const MarketplaceListingDetailPage = () => {
               disabled={isOwner || listing.status !== "PUBLISHED"}
               onClick={() => {
                 setOfferOpen((value) => !value);
-                if (!offerAmount) setOfferAmount(String(listing.price));
               }}
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#171329] px-6 py-4 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -381,49 +361,7 @@ const MarketplaceListingDetailPage = () => {
                 gửi đề nghị.
               </p>
             ) : null}
-            {offerOpen ? (
-              <form
-                onSubmit={submitOffer}
-                className="mt-4 space-y-3 rounded-2xl border border-violet-100 bg-violet-50/60 p-4"
-              >
-                <label className="block text-xs font-bold uppercase tracking-wide text-violet-700">
-                  Mức giá đề nghị
-                  <input
-                    required
-                    min="1"
-                    type="number"
-                    value={offerAmount}
-                    onChange={(event) => setOfferAmount(event.target.value)}
-                    className="mt-2 w-full rounded-xl border border-violet-100 bg-white px-4 py-3 text-base text-slate-900 outline-none"
-                  />
-                </label>
-                <textarea
-                  value={offerMessage}
-                  onChange={(event) => setOfferMessage(event.target.value)}
-                  rows={3}
-                  placeholder="Lời nhắn cho người bán"
-                  className="w-full resize-none rounded-xl border border-violet-100 bg-white px-4 py-3 text-sm outline-none"
-                />
-                <p className="text-xs leading-5 text-slate-500">
-                  Tiền cọc dự kiến:{" "}
-                  {formatMarketplacePrice(
-                    Math.round((Number(offerAmount) || 0) * 0.1),
-                  )}
-                  . Chưa thu tiền ở bước này.
-                </p>
-                <button
-                  disabled={offerSaving}
-                  className="w-full rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
-                >
-                  {offerSaving ? "Đang gửi..." : "Xác nhận đề nghị"}
-                </button>
-                {offerStatus ? (
-                  <p className="text-xs leading-5 text-violet-700">
-                    {offerStatus}
-                  </p>
-                ) : null}
-              </form>
-            ) : null}
+            {offerOpen && <OfferComposer listingId={listing.publicId} price={listing.price} exchangeAllowed={listing.exchangeAllowed || listing.listingType !== "SALE"} exchangeOnly={listing.listingType === "EXCHANGE"} onSuccess={()=>navigate("/deals")} onCancel={()=>setOfferOpen(false)} />}
             <div className="mt-5 grid grid-cols-2 gap-3">
               <button
                 type="button"
@@ -565,7 +503,9 @@ const MarketplaceListingDetailPage = () => {
             </div>
           </div>
         </section>
-        <RelatedMarketplaceListings key={listing.publicId} listing={listing} />
+        <div className="mt-6 flex flex-wrap gap-3"><button className="rounded-xl border px-4 py-3 font-bold text-violet-700" onClick={()=>{const ids=readComparison();const next=ids.includes(listing.publicId)?ids:ids.length<3?[...ids,listing.publicId]:ids;localStorage.setItem(comparisonKey,JSON.stringify(next));navigate(`/compare-listings?ids=${next.join(",")}`);}}>So sánh xe này</button>{!isOwner&&<ReportButton type="USER" target={String(listing.sellerId)}/>}</div>
+        <ListingComments key={"comments-"+listing.publicId} listingId={listing.publicId} sellerId={listing.sellerId}/>
+        <RelatedMarketplaceListings key={"related-"+listing.publicId} listing={listing} />
       </div>
     </main>
   );

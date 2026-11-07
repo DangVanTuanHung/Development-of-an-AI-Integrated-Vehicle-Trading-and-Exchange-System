@@ -26,7 +26,7 @@ try {
   console.log("\n[MOTIONX] Khoi dong PostgreSQL, Redis, MinIO va backend...");
   console.log("[MOTIONX] Lan dau tai images va build Java co the mat vai phut.\n");
   await docker(["compose", "up", "-d", "--build", "--wait", "--wait-timeout", "180",
-    "postgres", "redis", "minio", "backend"]);
+    "postgres", "redis", "minio", "mailpit", "backend"]);
   // This command always connects the web app to the local backend.
   process.env.VITE_API_BASE_URL = "http://localhost:8080/api/v1";
   process.chdir(path.join(root, "packages", "web"));

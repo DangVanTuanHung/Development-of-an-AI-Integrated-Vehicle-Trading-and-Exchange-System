@@ -2,6 +2,7 @@ import { useAuth } from "@ebike/shared-code/hooks";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 
 const customerNavItems = [
+  { to: "/marketplace-account", label: "Marketplace" },
   { to: "/customer", label: "Tổng quan", end: true },
   { to: "/customer/orders", label: "Đơn hàng" },
   { to: "/customer/payments", label: "Thanh toán" },

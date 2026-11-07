@@ -17,7 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class MarketplaceAppointmentService {
-    private static final List<String> STATUSES = List.of("CONFIRMED", "DECLINED", "COMPLETED", "CANCELLED");
+    private static final List<String> STATUSES = List.of("CONFIRMED", "DECLINED", "COMPLETED", "CANCELLED", "RESCHEDULE");
 
     private final JdbcTemplate jdbc;
     private final UserRepository users;
@@ -39,13 +39,14 @@ public class MarketplaceAppointmentService {
         if (sellerId == buyer.getId()) throw badRequest("Bạn không thể đặt lịch cho tin của mình");
         if (!"PUBLISHED".equals(listing.get("status"))) throw badRequest("Tin đăng không còn nhận lịch xem");
         if (request.scheduledAt().isBefore(OffsetDateTime.now())) throw badRequest("Thời gian xem xe phải ở tương lai");
+        available(buyer.getId(),sellerId,request.scheduledAt(),-1L);
         UUID publicId = UUID.randomUUID();
         Long id = jdbc.queryForObject("""
-            insert into marketplace.appointments(public_id, listing_id, buyer_id, seller_id, scheduled_at, location, note)
-            values (?, ?, ?, ?, ?, ?, ?)
+            insert into marketplace.appointments(public_id, listing_id, buyer_id, seller_id, scheduled_at, location, note,proposed_by)
+            values (?, ?, ?, ?, ?, ?, ?,?)
             returning id
             """, Long.class, publicId, listing.get("id"), buyer.getId(), sellerId,
-            request.scheduledAt(), request.location().trim(), clean(request.note()));
+            request.scheduledAt(), request.location().trim(), clean(request.note()),buyer.getId());
         return appointment(id);
     }
 
@@ -64,14 +65,24 @@ public class MarketplaceAppointmentService {
         boolean seller = ((Number) appointment.get("seller_id")).longValue() == user.getId();
         if (!buyer && !seller) throw forbidden();
         String current = String.valueOf(appointment.get("status"));
+        if(request.revision()!=null&&request.revision()!=((Number)appointment.get("revision")).intValue())throw new ResponseStatusException(HttpStatus.CONFLICT,"Lịch đã thay đổi, hãy tải lại.");
+        if("RESCHEDULE".equals(status)){
+            if(!List.of("REQUESTED","CONFIRMED").contains(current))throw badRequest("Không thể đổi lịch đã kết thúc.");
+            if(request.revision()==null||request.scheduledAt()==null||!request.scheduledAt().isAfter(OffsetDateTime.now())||request.location()==null||request.location().isBlank())throw badRequest("Nhập lịch mới trong tương lai, địa điểm và phiên bản hiện tại.");
+            available(((Number)appointment.get("buyer_id")).longValue(),((Number)appointment.get("seller_id")).longValue(),request.scheduledAt(),((Number)appointment.get("id")).longValue());
+            jdbc.update("update marketplace.appointments set scheduled_at=?,location=?,seller_note=?,proposed_by=?,revision=revision+1,status='REQUESTED',reminder_at=null,updated_at=now() where id=?",request.scheduledAt(),request.location().trim(),clean(request.note()),user.getId(),appointment.get("id"));
+            return appointment(((Number)appointment.get("id")).longValue());
+        }
         if ("CONFIRMED".equals(status) || "DECLINED".equals(status)) {
-            if (!seller || !"REQUESTED".equals(current)) throw badRequest("Chỉ người bán mới có thể phản hồi lịch đang chờ");
+            if (((Number)appointment.get("proposed_by")).longValue()==user.getId() || !"REQUESTED".equals(current)) throw badRequest("Chỉ bên nhận đề xuất mới được phản hồi lịch đang chờ");
+            if(!future(appointment.get("scheduled_at")))throw badRequest("Lịch đã quá hạn, cần đề xuất giờ khác.");
         } else if ("COMPLETED".equals(status)) {
             if (!buyer && !seller || !"CONFIRMED".equals(current)) throw badRequest("Lịch phải được xác nhận trước khi hoàn thành");
+            if(future(appointment.get("scheduled_at")))throw badRequest("Chưa đến giờ hẹn.");
         } else if ("CANCELLED".equals(status)) {
             if (!List.of("REQUESTED", "CONFIRMED").contains(current)) throw badRequest("Lịch hẹn không còn có thể hủy");
         }
-        jdbc.update("update marketplace.appointments set status=?, seller_note=?, responded_at=case when ? in ('CONFIRMED','DECLINED') then now() else responded_at end, updated_at=now() where id=?", status, clean(request.note()), status, appointment.get("id"));
+        jdbc.update("update marketplace.appointments set status=?, seller_note=coalesce(?,seller_note),revision=revision+1, responded_at=case when ? in ('CONFIRMED','DECLINED') then now() else responded_at end, updated_at=now() where id=?", status, clean(request.note()), status, appointment.get("id"));
         return appointment(((Number) appointment.get("id")).longValue());
     }
 
@@ -79,7 +90,7 @@ public class MarketplaceAppointmentService {
         return """
             select a.public_id as \"publicId\", a.listing_id as \"listingId\", l.title as \"listingTitle\",
                    a.buyer_id as \"buyerId\", a.seller_id as \"sellerId\", a.scheduled_at as \"scheduledAt\",
-                   a.location, a.note, a.seller_note as \"sellerNote\", a.status,
+                   a.location, a.note, a.seller_note as \"sellerNote\", a.status,a.revision,a.proposed_by as \"proposedBy\",
                    a.created_at as \"createdAt\", a.responded_at as \"respondedAt\",
                    coalesce(nullif(trim(b.first_name || ' ' || b.last_name), ''), b.username) as \"buyerName\",
                    coalesce(nullif(trim(s.first_name || ' ' || s.last_name), ''), s.username) as \"sellerName\"
@@ -114,6 +125,11 @@ public class MarketplaceAppointmentService {
         return new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền thao tác lịch này");
     }
 
+    private boolean future(Object value){return (value instanceof OffsetDateTime at?at.toInstant():((java.sql.Timestamp)value).toInstant()).isAfter(java.time.Instant.now());}
+    private void available(long buyer,long seller,OffsetDateTime at,long exclude){
+        for(long id:new java.util.TreeSet<Long>(List.of(buyer,seller)))jdbc.queryForList("select pg_advisory_xact_lock(?)",id);
+        if(Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from marketplace.appointments where id<>? and status in ('REQUESTED','CONFIRMED') and (buyer_id in (?,?) or seller_id in (?,?)) and scheduled_at between ?::timestamptz-interval '30 minutes' and ?::timestamptz+interval '30 minutes')",Boolean.class,exclude,buyer,seller,buyer,seller,at,at)))throw new ResponseStatusException(HttpStatus.CONFLICT,"Một bên đã có lịch trong khoảng 30 phút này. Hãy chọn giờ khác.");
+    }
     private String clean(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }

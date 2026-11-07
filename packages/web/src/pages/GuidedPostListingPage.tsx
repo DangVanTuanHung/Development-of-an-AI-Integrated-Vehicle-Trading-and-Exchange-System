@@ -1,14 +1,16 @@
 import { ArrowLeft, ArrowRight, BrainCircuit, Check, CheckCircle2, CircleAlert, FileVideo, ImagePlus, Loader2, Sparkles } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { marketplaceAPI, type MarketplaceCategory, resolveMarketplaceMediaUrl, type MarketplaceListing, type MarketplaceVisionResult } from "../services/marketplace";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "@ebike/shared-code/hooks";
+import { marketplaceAPI, type MarketplaceCategory, type MarketplaceBrand, type MarketplaceModel, resolveMarketplaceMediaUrl, type MarketplaceListing, type MarketplaceVisionResult } from "../services/marketplace";
 
-type FormState = { categoryId: string; title: string; description: string; listingType: string; condition: string; price: string; province: string; district: string; manufactureYear: string; registrationYear: string; mileageKm: string; exteriorColor: string; fuelType: string; transmission: string; engineCapacityCc: string; rangeKm: string; seats: string; ownersCount: string; origin: string; negotiable: boolean; exchangeAllowed: boolean };
-const initialForm: FormState = { categoryId: "", title: "", description: "", listingType: "SALE", condition: "USED", price: "", province: "", district: "", manufactureYear: "", registrationYear: "", mileageKm: "", exteriorColor: "", fuelType: "", transmission: "", engineCapacityCc: "", rangeKm: "", seats: "", ownersCount: "", origin: "", negotiable: true, exchangeAllowed: false };
+type FormState = { brandId: string; modelId: string; addressText: string; categoryId: string; title: string; description: string; listingType: string; condition: string; price: string; province: string; district: string; manufactureYear: string; registrationYear: string; mileageKm: string; exteriorColor: string; fuelType: string; transmission: string; engineCapacityCc: string; rangeKm: string; seats: string; ownersCount: string; origin: string; negotiable: boolean; exchangeAllowed: boolean };
+const initialForm: FormState = { brandId: "", modelId: "", addressText: "", categoryId: "", title: "", description: "", listingType: "SALE", condition: "USED", price: "", province: "", district: "", manufactureYear: "", registrationYear: "", mileageKm: "", exteriorColor: "", fuelType: "", transmission: "", engineCapacityCc: "", rangeKm: "", seats: "", ownersCount: "", origin: "", negotiable: true, exchangeAllowed: false };
 const requiredFields: Array<[keyof FormState, string]> = [["categoryId", "Loại phương tiện"], ["title", "Tiêu đề"], ["price", "Giá bán"], ["province", "Tỉnh/Thành phố"], ["description", "Mô tả"]];
 
 const GuidedPostListingPage = ({ management = false }: { management?: boolean }) => {
   const navigate = useNavigate();
+  const { isAuthenticated, isBootstrapping } = useAuth();
   const { id: editId } = useParams();
   const [existing, setExisting] = useState<MarketplaceListing | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
@@ -28,6 +30,9 @@ const GuidedPostListingPage = ({ management = false }: { management?: boolean })
   }, [editId]);
   const [step, setStep] = useState(1);
   const [categories, setCategories] = useState<MarketplaceCategory[]>([]);
+  const [brands, setBrands] = useState<MarketplaceBrand[]>([]);
+  const [models, setModels] = useState<MarketplaceModel[]>([]);
+  const [catalogError, setCatalogError] = useState("");
   const [form, setForm] = useState(initialForm);
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -36,14 +41,31 @@ const GuidedPostListingPage = ({ management = false }: { management?: boolean })
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => { void marketplaceAPI.categories().then(setCategories); }, []);
+  useEffect(() => {
+    let active = true;
+    Promise.all([marketplaceAPI.categories(), marketplaceAPI.brands()])
+      .then(([nextCategories, nextBrands]) => { if (active) { setCategories(nextCategories); setBrands(nextBrands); setCatalogError(""); } })
+      .catch(() => { if (active) setCatalogError("Không thể tải danh mục và hãng xe. Vui lòng tải lại trang."); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    setModels([]);
+    if (form.brandId && form.categoryId) marketplaceAPI.models(Number(form.brandId), Number(form.categoryId))
+      .then(items => { if (active) { setModels(items); setCatalogError(""); } })
+      .catch(() => { if (active) setCatalogError("Không thể tải dòng xe. Vui lòng chọn lại hãng xe."); });
+    return () => { active = false; };
+  }, [form.brandId, form.categoryId]);
 
   const missingRequired = useMemo(() => requiredFields.filter(([key]) => !String(form[key] ?? "").trim()).map(([, label]) => label), [form]);
-  const update = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({ ...current, [key]: value }));
+  const update = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({
+    ...current, [key]: value, ...(key === "brandId" || key === "categoryId" ? { modelId: "" } : {}),
+  }));
 
   const selectFiles = async (selected: File[]) => {
     setError("");
-    const accepted = selected.filter((file) => file.type.startsWith("image/") || ["video/mp4", "video/webm"].includes(file.type)).slice(0, 12);
+    const accepted = selected.filter((file) => ["image/jpeg","image/png","image/webp","video/mp4","video/webm"].includes(file.type));
+    if(accepted.length+(existing?.images.length||0)>12) { setError("Mỗi tin tối đa 12 ảnh/video, bao gồm các tệp hiện có."); return; }
     const total = accepted.reduce((sum, file) => sum + file.size, 0);
     if (!accepted.length) { setError("Vui lòng chọn ảnh JPEG/PNG/WebP hoặc video MP4/WebM."); return; }
     if (total > 20 * 1024 * 1024) { setError("Tổng dung lượng tối đa là 20 MB. Hãy giảm số lượng hoặc dung lượng tệp."); return; }
@@ -57,22 +79,32 @@ const GuidedPostListingPage = ({ management = false }: { management?: boolean })
     finally { setAnalyzing(false); }
   };
 
-  const submit = async () => {
-    if (step !== 3 || !confirmed || submitting) return;
+  const submit = async (publish = true) => {
+    if (submitting || (publish && (step !== 3 || !confirmed))) return;
     if (missingRequired.length) { setError(`Vui lòng bổ sung: ${missingRequired.join(", ")}.`); setStep(2); return; }
-    if (!files.length && !existing?.images.length) { setError("Tin đăng cần ít nhất một ảnh hoặc video."); setStep(1); return; }
+    if (publish && !files.length && !existing?.images.length) { setError("Tin đăng cần ít nhất một ảnh hoặc video."); setStep(1); return; }
     setSubmitting(true); setError("");
     try {
       const numberOrNull = (value: string) => value ? Number(value) : null;
-      const payload = { ...form, categoryId: Number(form.categoryId), brandId: null, price: Number(form.price), addressText: null, manufactureYear: numberOrNull(form.manufactureYear), registrationYear: numberOrNull(form.registrationYear), mileageKm: numberOrNull(form.mileageKm), engineCapacityCc: numberOrNull(form.engineCapacityCc), rangeKm: numberOrNull(form.rangeKm), seats: numberOrNull(form.seats), ownersCount: numberOrNull(form.ownersCount) };
+      const payload = { ...form, categoryId: Number(form.categoryId), brandId: numberOrNull(form.brandId), modelId: numberOrNull(form.modelId), price: Number(form.price), manufactureYear: numberOrNull(form.manufactureYear), registrationYear: numberOrNull(form.registrationYear), mileageKm: numberOrNull(form.mileageKm), engineCapacityCc: numberOrNull(form.engineCapacityCc), rangeKm: numberOrNull(form.rangeKm), seats: numberOrNull(form.seats), ownersCount: numberOrNull(form.ownersCount) };
       const created = editId ? await marketplaceAPI.editListing(editId, payload) : savedId ? await marketplaceAPI.editListing(savedId, payload) : await marketplaceAPI.createListing(payload);
       setSavedId(created.publicId);
-      for (const file of files) await marketplaceAPI.uploadListingImage(created.publicId, file);
-      await marketplaceAPI.publishListing(created.publicId);
+      setExisting(created);
+      for (const file of files) {
+        await marketplaceAPI.uploadListingImage(created.publicId, file);
+        setFiles(current => current.filter(item => item !== file));
+        const preview = previews[files.indexOf(file)];
+        if (preview) { URL.revokeObjectURL(preview); setPreviews(current => current.filter(item => item !== preview)); }
+      }
+      setExisting(await marketplaceAPI.detail(created.publicId));
+      if (publish) await marketplaceAPI.publishListing(created.publicId);
       navigate(management ? "/manager/products" : "/my-listings");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Không thể đăng tin. Vui lòng thử lại."); }
     finally { setSubmitting(false); }
   };
+
+  if (isBootstrapping) return <p role="status" className="px-5 pt-32">Đang kiểm tra đăng nhập...</p>;
+  if (!isAuthenticated) return <Navigate to="/auth" replace state={{from: editId ? `/sell/${editId}/edit` : "/sell"}} />;
 
   return <main className={management ? "bg-[#fff9f6] px-4 py-6" : "min-h-screen bg-[#fff9f6] px-4 pb-24 pt-28 sm:px-7"}><div className="mx-auto max-w-6xl">
     <div className="mb-7 flex items-center justify-between"><Link to={management ? "/manager/products" : "/products"} className="flex items-center gap-2 text-sm font-bold text-violet-700"><ArrowLeft size={17} />Quay lại</Link><span className="text-sm text-slate-500">Tin sẽ được kiểm duyệt trước khi hiển thị</span></div>
@@ -85,21 +117,23 @@ const GuidedPostListingPage = ({ management = false }: { management?: boolean })
         {analyzing ? <StatusBox icon={<Loader2 className="animate-spin" />} title="AI đang xem ảnh/video..." text="Đang nhận diện loại xe, màu sắc và đặc điểm có thể quan sát." tone="violet" /> : vision ? vision.visionAvailable ? <StatusBox icon={<BrainCircuit />} title={`Đã nhận diện • độ tin cậy ${vision.confidence}%`} text={vision.detectedFeatures?.length ? vision.detectedFeatures.join(" • ") : "AI đã điền trước các trường nhận diện được. Bạn sẽ xác nhận ở bước tiếp theo."} tone="green" /> : <StatusBox icon={<CircleAlert />} title="Bạn vẫn có thể tiếp tục" text="AI thị giác hiện chưa khả dụng. Ảnh/video đã được giữ lại; hãy nhập thông tin xe ở bước tiếp theo." tone="amber" /> : null}
       </section> : null}
 
-      {step === 2 ? <section><StepTitle number="02" title="Xác nhận thông tin tin đăng" description="Các trường có dấu * là bắt buộc. Hãy sửa lại nếu gợi ý AI chưa chính xác." /><div className="mt-7 grid gap-5 sm:grid-cols-2"><Field label="Loại phương tiện *"><select value={form.categoryId} onChange={(e)=>update("categoryId",e.target.value)} className="input-base"><option value="">Chọn loại xe</option>{categories.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label="Hình thức"><select value={form.listingType} onChange={(e)=>update("listingType",e.target.value)} className="input-base"><option value="SALE">Bán</option><option value="EXCHANGE">Trao đổi</option><option value="SALE_OR_EXCHANGE">Bán hoặc trao đổi</option></select></Field><Field label="Tiêu đề *" wide><input value={form.title} maxLength={220} onChange={(e)=>update("title",e.target.value)} className="input-base" placeholder="Ví dụ: Honda SH 160i ABS 2024" /></Field><Field label="Tình trạng *"><select value={form.condition} onChange={(e)=>update("condition",e.target.value)} className="input-base"><option value="NEW">Mới</option><option value="LIKE_NEW">Như mới</option><option value="USED">Đã sử dụng</option><option value="RESTORED">Đã phục hồi</option><option value="DAMAGED">Cần sửa chữa</option></select></Field><Field label="Giá bán (VND) *"><input type="number" min="1" value={form.price} onChange={(e)=>update("price",e.target.value)} className="input-base" placeholder="Ví dụ: 80000000" /></Field><Field label="Tỉnh/Thành phố *"><input value={form.province} onChange={(e)=>update("province",e.target.value)} className="input-base" placeholder="Ví dụ: TP. Hồ Chí Minh" /></Field><Field label="Quận/Huyện"><input value={form.district} onChange={(e)=>update("district",e.target.value)} className="input-base" /></Field><Field label="Mô tả *" wide><textarea rows={6} maxLength={10000} value={form.description} onChange={(e)=>update("description",e.target.value)} className="input-base resize-none" placeholder="Tình trạng sử dụng, bảo dưỡng, giấy tờ và lý do bán..." /></Field></div>{missingRequired.length ? <p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-700">Còn thiếu: {missingRequired.join(", ")}.</p> : <p className="mt-5 flex items-center gap-2 text-sm font-semibold text-emerald-600"><CheckCircle2 size={17} />Thông tin bắt buộc đã đầy đủ.</p>}</section> : null}
+      {step === 2 ? <section><StepTitle number="02" title="Xác nhận thông tin tin đăng" description="Các trường có dấu * là bắt buộc. Hãy sửa lại nếu gợi ý AI chưa chính xác." /><div className="mt-7 grid gap-5 sm:grid-cols-2"><Field label="Loại phương tiện *"><select value={form.categoryId} onChange={(e)=>update("categoryId",e.target.value)} className="input-base"><option value="">Chọn loại xe</option>{categories.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label="Hãng xe"><select value={form.brandId} onChange={(e)=>update("brandId",e.target.value)} className="input-base"><option value="">Chưa xác định hãng</option>{brands.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label="Dòng xe"><select value={form.modelId} disabled={!form.brandId || !form.categoryId} onChange={(e)=>update("modelId",e.target.value)} className="input-base"><option value="">{models.length ? "Chọn dòng xe (không bắt buộc)" : "Chưa có dòng xe phù hợp"}</option>{models.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label="Hình thức"><select value={form.listingType} onChange={(e)=>update("listingType",e.target.value)} className="input-base"><option value="SALE">Bán</option><option value="EXCHANGE">Trao đổi</option><option value="SALE_OR_EXCHANGE">Bán hoặc trao đổi</option></select></Field><Field label="Tiêu đề *" wide><input value={form.title} maxLength={220} onChange={(e)=>update("title",e.target.value)} className="input-base" placeholder="Ví dụ: Honda SH 160i ABS 2024" /></Field><Field label="Tình trạng *"><select value={form.condition} onChange={(e)=>update("condition",e.target.value)} className="input-base"><option value="NEW">Mới</option><option value="LIKE_NEW">Như mới</option><option value="USED">Đã sử dụng</option><option value="RESTORED">Đã phục hồi</option><option value="DAMAGED">Cần sửa chữa</option></select></Field><Field label="Giá bán (VND) *"><input type="number" min="1" value={form.price} onChange={(e)=>update("price",e.target.value)} className="input-base" placeholder="Ví dụ: 80000000" /></Field><Field label="Tỉnh/Thành phố *"><input value={form.province} onChange={(e)=>update("province",e.target.value)} className="input-base" placeholder="Ví dụ: TP. Hồ Chí Minh" /></Field><Field label="Quận/Huyện"><input value={form.district} onChange={(e)=>update("district",e.target.value)} className="input-base" /></Field><Field label="Địa chỉ xem xe" wide><input value={form.addressText} maxLength={500} onChange={(e)=>update("addressText",e.target.value)} className="input-base" placeholder="Số nhà, đường hoặc điểm hẹn công khai" /><span className="block text-xs font-normal text-slate-500">Địa chỉ này sẽ hiển thị công khai trên tin đăng.</span></Field><Field label="Mô tả *" wide><textarea rows={6} maxLength={10000} value={form.description} onChange={(e)=>update("description",e.target.value)} className="input-base resize-none" placeholder="Tình trạng sử dụng, bảo dưỡng, giấy tờ và lý do bán..." /></Field></div>{missingRequired.length ? <p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-700">Còn thiếu: {missingRequired.join(", ")}.</p> : <p className="mt-5 flex items-center gap-2 text-sm font-semibold text-emerald-600"><CheckCircle2 size={17} />Thông tin bắt buộc đã đầy đủ.</p>}</section> : null}
 
       {existing?.images.length ? <div className="mt-5"><p className="text-sm text-slate-500">Ảnh hiện có (ảnh mới sẽ được bổ sung):</p><div className="mt-2 flex gap-3 overflow-x-auto">{existing.images.map(url=><div key={url} className="shrink-0"><a href={resolveMarketplaceMediaUrl(url)} target="_blank" rel="noreferrer" className="shrink-0 text-violet-700">{/\.(mp4|webm)$/i.test(url) ? <span>Xem video</span> : <img src={resolveMarketplaceMediaUrl(url)} alt="Ảnh xe hiện có" className="h-24 w-28 rounded-lg object-contain" />}</a><button type="button" disabled={submitting} onClick={async()=>{setSubmitting(true);try{setExisting(await marketplaceAPI.removeListingImage(existing.publicId,url));}catch(e){setError(e instanceof Error?e.message:"Không thể gỡ ảnh.");}finally{setSubmitting(false);}}} className="mt-1 text-xs font-semibold text-red-600">Gỡ ảnh khỏi tin</button></div>)}</div></div> : null}
       {step === 3 ? <section><StepTitle number="03" title="Thông số và xác nhận đăng tin" description="Điền những mục bạn biết. Không chắc chắn thì để trống, không nên đoán." /><div className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3"><NumberField label="Năm sản xuất" value={form.manufactureYear} onChange={(v)=>update("manufactureYear",v)} /><NumberField label="Năm đăng ký" value={form.registrationYear} onChange={(v)=>update("registrationYear",v)} /><NumberField label="Số km đã đi" value={form.mileageKm} onChange={(v)=>update("mileageKm",v)} /><Field label="Màu xe"><input value={form.exteriorColor} onChange={(e)=>update("exteriorColor",e.target.value)} className="input-base" /></Field><Field label="Nhiên liệu"><select value={form.fuelType} onChange={(e)=>update("fuelType",e.target.value)} className="input-base"><option value="">Chưa rõ</option><option value="GASOLINE">Xăng</option><option value="DIESEL">Dầu</option><option value="ELECTRIC">Điện</option><option value="HYBRID">Hybrid</option><option value="OTHER">Khác</option></select></Field><Field label="Hộp số"><select value={form.transmission} onChange={(e)=>update("transmission",e.target.value)} className="input-base"><option value="">Chưa rõ</option><option value="AUTOMATIC">Tự động</option><option value="MANUAL">Số sàn</option><option value="CVT">CVT</option><option value="SINGLE_SPEED">Một cấp</option><option value="OTHER">Khác</option></select></Field><NumberField label="Dung tích động cơ (cc)" value={form.engineCapacityCc} onChange={(v)=>update("engineCapacityCc",v)} /><NumberField label="Tầm hoạt động (km)" value={form.rangeKm} onChange={(v)=>update("rangeKm",v)} /><NumberField label="Số chỗ ngồi" value={form.seats} onChange={(v)=>update("seats",v)} /><NumberField label="Số đời chủ" value={form.ownersCount} onChange={(v)=>update("ownersCount",v)} /><Field label="Xuất xứ" wide><input value={form.origin} onChange={(e)=>update("origin",e.target.value)} className="input-base" placeholder="Lắp ráp trong nước hoặc nhập khẩu" /></Field></div><div className="mt-7 flex flex-wrap gap-5 rounded-2xl bg-violet-50 p-5"><label className="flex items-center gap-2 font-semibold"><input type="checkbox" checked={form.negotiable} onChange={(e)=>update("negotiable",e.target.checked)} />Có thể thương lượng</label><label className="flex items-center gap-2 font-semibold"><input type="checkbox" checked={form.exchangeAllowed} onChange={(e)=>update("exchangeAllowed",e.target.checked)} />Chấp nhận trao đổi</label></div><div className="mt-6 rounded-2xl border border-violet-100 p-5"><p className="font-extrabold">Trước khi đăng</p><ul className="mt-3 space-y-2 text-sm text-slate-600"><li>✓ Tôi đã kiểm tra thông tin và hình ảnh đúng với xe thực tế.</li><li>✓ Tôi hiểu MOTIONX không yêu cầu OTP, CVV hoặc mật khẩu ngân hàng.</li><li>✓ Tôi sẽ cho người mua xem xe và giấy tờ trước khi hoàn tất giao dịch.</li></ul></div></section> : null}
 
       {step === 3 ? <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-5 text-sm text-slate-700"><input type="checkbox" checked={confirmed} onChange={(event)=>setConfirmed(event.target.checked)} className="mt-1 h-5 w-5 accent-violet-600" /><span><strong className="block text-slate-900">Xác nhận trước khi đăng tin</strong>Tôi đã xem lại thông tin, hình ảnh và đồng ý đăng tin này lên MOTIONX.</span></label> : null}
+      {catalogError ? <p role="alert" className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">{catalogError}</p> : null}
       {error ? <p className="mt-6 rounded-xl bg-red-50 p-4 text-sm font-semibold text-red-600">{error}</p> : null}
-      <footer className="mt-8 flex flex-col-reverse gap-3 border-t border-violet-50 pt-6 sm:flex-row sm:justify-between">{step > 1 ? <button type="button" onClick={()=>{setError("");setConfirmed(false);setStep(step-1);}} className="rounded-2xl border border-violet-100 px-7 py-4 font-bold text-violet-700">Quay lại</button> : <span />}{step < 3 ? <button type="button" disabled={step === 1 && !files.length && !existing?.images.length} onClick={()=>{ if (step===2 && missingRequired.length) { setError(`Vui lòng bổ sung: ${missingRequired.join(", ")}.`); return; } setError("");setStep(step+1);}} className="flex items-center justify-center gap-2 rounded-2xl bg-[#171329] px-8 py-4 font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Tiếp tục <ArrowRight size={18} /></button> : <button type="button" onClick={()=>void submit()} disabled={submitting || missingRequired.length > 0 || !confirmed || Boolean(editId && !existing)} className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-8 py-4 font-bold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40">{submitting ? <><Loader2 className="animate-spin" size={18} />Đang gửi duyệt...</> : <>Gửi duyệt tin <ArrowRight size={18} /></>}</button>}</footer>
+      <div className="mt-6"><button type="button" disabled={submitting || Boolean(editId && !existing)} onClick={()=>void submit(false)} className="rounded-xl border border-violet-200 px-5 py-3 font-bold text-violet-700 disabled:opacity-40">{submitting ? "Đang lưu..." : "Lưu bản nháp"}</button><p className="mt-2 text-xs text-slate-500">Bản nháp chưa hiển thị công khai. Điền thông tin bắt buộc trước khi lưu; có thể bổ sung ảnh sau.</p></div>
+      <footer className="mt-8 flex flex-col-reverse gap-3 border-t border-violet-50 pt-6 sm:flex-row sm:justify-between">{step > 1 ? <button type="button" onClick={()=>{setError("");setConfirmed(false);setStep(step-1);}} className="rounded-2xl border border-violet-100 px-7 py-4 font-bold text-violet-700">Quay lại</button> : <span />}{step < 3 ? <button type="button" disabled={submitting} onClick={()=>{ if (step===2 && missingRequired.length) { setError(`Vui lòng bổ sung: ${missingRequired.join(", ")}.`); return; } setError("");setStep(step+1);}} className="flex items-center justify-center gap-2 rounded-2xl bg-[#171329] px-8 py-4 font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Tiếp tục <ArrowRight size={18} /></button> : <button type="button" onClick={()=>void submit()} disabled={submitting || missingRequired.length > 0 || !confirmed || Boolean(editId && !existing)} className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-8 py-4 font-bold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40">{submitting ? <><Loader2 className="animate-spin" size={18} />Đang gửi duyệt...</> : <>Gửi duyệt tin <ArrowRight size={18} /></>}</button>}</footer>
     </form>
   </div></main>;
 };
 
 const StepTitle = ({number,title,description}:{number:string;title:string;description:string}) => <div className="flex gap-4"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-violet-100 text-sm font-extrabold text-violet-700">{number}</span><div><h2 className="text-2xl font-extrabold">{title}</h2><p className="mt-1 text-sm leading-6 text-slate-500">{description}</p></div></div>;
 const Field = ({label,wide,children}:{label:string;wide?:boolean;children:ReactNode}) => <label className={`space-y-2 text-sm font-bold ${wide ? "sm:col-span-2 lg:col-span-full" : ""}`}>{label}{children}</label>;
-const NumberField = ({label,value,onChange}:{label:string;value:string;onChange:(value:string)=>void}) => label === "Số đời chủ" ? null : <Field label={label}><input type="number" min="0" value={value} onChange={(e)=>onChange(e.target.value)} className="input-base" /></Field>;
+const NumberField = ({label,value,onChange}:{label:string;value:string;onChange:(value:string)=>void}) => <Field label={label}><input type="number" min="0" value={value} onChange={(e)=>onChange(e.target.value)} className="input-base" /></Field>;
 const StatusBox = ({icon,title,text,tone}:{icon:ReactNode;title:string;text:string;tone:"violet"|"green"|"amber"}) => <div className={`mt-5 flex gap-3 rounded-2xl p-4 ${tone==="green"?"bg-emerald-50 text-emerald-700":tone==="amber"?"bg-amber-50 text-amber-700":"bg-violet-50 text-violet-700"}`}><span className="shrink-0">{icon}</span><div><p className="font-extrabold">{title}</p><p className="mt-1 text-sm leading-6 opacity-80">{text}</p></div></div>;
 
 export default GuidedPostListingPage;

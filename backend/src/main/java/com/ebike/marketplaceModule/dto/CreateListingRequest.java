@@ -4,6 +4,8 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import java.math.BigDecimal;
 
 public record CreateListingRequest(
@@ -19,15 +21,16 @@ public record CreateListingRequest(
     @NotBlank @Size(max = 120) String province,
     @Size(max = 120) String district,
     @Size(max = 500) String addressText,
-    Integer manufactureYear,
-    Integer registrationYear,
-    Integer mileageKm,
+    @Min(1886) @Max(2200) Integer manufactureYear,
+    @Min(1886) @Max(2200) Integer registrationYear,
+    @Min(0) Integer mileageKm,
     @Size(max = 80) String exteriorColor,
     @Size(max = 30) String fuelType,
     @Size(max = 30) String transmission,
-    Integer engineCapacityCc,
-    Integer rangeKm,
-    Integer seats,
-    Integer ownersCount,
-    @Size(max = 120) String origin
+    @Min(0) Integer engineCapacityCc,
+    @Min(0) Integer rangeKm,
+    @Min(1) @Max(100) Integer seats,
+    @Min(0) Integer ownersCount,
+    @Size(max = 120) String origin,
+    Long modelId
 ) {}

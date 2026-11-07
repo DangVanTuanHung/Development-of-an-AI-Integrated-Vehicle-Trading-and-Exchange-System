@@ -2,14 +2,20 @@ import { apiClient } from "@ebike/shared-code/api";
 import { API_BASE_URL } from "@ebike/shared-code/config";
 
 export type MarketplaceCategory = { id: number; name: string; slug: string; parentId: number | null };
+export type MarketplaceBrand = { id: number; name: string; slug: string };
+export type MarketplaceModel = { id: number; name: string; slug: string; brandId: number; categoryId: number };
 export type MarketplaceListing = {
   id: number;
   publicId: string;
   sellerId: number;
   sellerName: string;
   sellerPhone?: string;
+  sellerVerified?: boolean;
   categoryId: number;
   brandId: number | null;
+  modelId?: number | null;
+  brandName?: string;
+  modelName?: string;
   title: string;
   slug: string;
   description: string;
@@ -42,11 +48,11 @@ export type MarketplaceListing = {
   createdAt: string;
 };
 export type MarketplaceMessage = { publicId: string; senderId: number; senderName: string; messageType: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "LOCATION"; content?: string; attachmentUrl?: string; fileName?: string; mimeType?: string; latitude?: string; longitude?: string; read?: boolean; createdAt: string };
-export type MarketplaceConversation = { publicId: string; listingPublicId: string; listingTitle: string; listingImageUrl?: string; listingPrice?: number; otherName: string; otherAvatarUrl?: string; lastMessage?: string; lastMessageAt?: string; unreadCount: number };
+export type MarketplaceConversation = { publicId: string; listingPublicId: string; listingTitle: string; listingImageUrl?: string; listingPrice?: number; otherName: string; otherId:number;blocked:boolean; otherAvatarUrl?: string; lastMessage?: string; lastMessageAt?: string; unreadCount: number };
 export type MarketplaceSellerReputation = {
-  seller: { id: number; username: string; firstName?: string; lastName?: string; createdAt: string };
-  summary: { averageRating: number; reviewCount: number };
-  reviews: Array<{ publicId: string; rating: number; comment?: string; reviewerName: string; createdAt: string }>;
+  seller: { id: number; username: string; firstName?: string; lastName?: string; createdAt: string; avatarUrl?: string; verified: boolean; emailVerifiedAt?: string; phoneVerifiedAt?: string };
+  summary: { averageRating: number; reviewCount: number; activeListingCount: number; completedVehicleCount: number };
+  reviews: Array<{ publicId: string; rating: number; comment?: string; reply?:string;reviewerId:number;targetId:number; reviewerName: string; createdAt: string }>;
 };
 export type MarketplaceAppointment = {
   publicId: string;
@@ -60,6 +66,8 @@ export type MarketplaceAppointment = {
   location: string;
   note?: string;
   sellerNote?: string;
+  proposedBy:number;
+  revision:number;
   status: "REQUESTED" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED";
   createdAt: string;
   respondedAt?: string;
@@ -68,7 +76,13 @@ export type MarketplaceDraftAdvice = { title: string; description: string; sugge
 export type MarketplaceVisionResult = { visionAvailable: boolean; title?: string; description?: string; categorySlug?: string; brand?: string; model?: string; variant?: string; manufactureYear?: number; registrationYear?: number; mileageKm?: number; exteriorColor?: string; fuelType?: string; transmission?: string; engineCapacityCc?: number; rangeKm?: number; seats?: number; origin?: string; condition?: string; confidence: number; detectedFeatures: string[]; imageFeedback: string[]; requiredFields: string[] };
 
 export const marketplaceAPI = {
+  sellerListings: async (id: number) => (await apiClient.get<MarketplaceListing[]>(`/marketplace/sellers/${id}/listings`)).data,
+  manageListing: async (id: string, action: "hide" | "relist" | "sold" | "renew") => (await apiClient.post<MarketplaceListing>(`/marketplace/listings/${id}/manage/${action}`)).data,
+  listingStatistics: async (id: string) => (await apiClient.get<{viewCount: number; favoriteCount: number; contactCount: number; offerCount: number; expiresAt?: string; priceHistory: Array<{previousPrice?: number;price:number;createdAt:string}>}>(`/marketplace/listings/${id}/statistics`)).data,
+  recordEngagement: async (id: string, type: "VIEW" | "CONTACT") => apiClient.post(`/marketplace/listings/${id}/engagement`, { type }),
   categories: async () => (await apiClient.get<MarketplaceCategory[]>("/marketplace/categories")).data,
+  brands: async () => (await apiClient.get<MarketplaceBrand[]>("/marketplace/brands")).data,
+  models: async (brandId: number, categoryId: number) => (await apiClient.get<MarketplaceModel[]>("/marketplace/models", { params: { brandId, categoryId } })).data,
   listings: async () => (await apiClient.get<MarketplaceListing[]>("/marketplace/listings")).data,
   ownListings: async () => (await apiClient.get<MarketplaceListing[]>("/marketplace/seller/listings")).data,
   detail: async (publicId: string) => (await apiClient.get<MarketplaceListing>(`/marketplace/listings/${publicId}`)).data,
@@ -123,11 +137,7 @@ export const marketplaceAPI = {
     (await apiClient.get<{ typing: boolean }>(`/marketplace/conversations/${conversationId}/typing`)).data,
   conversations: async () =>
     (await apiClient.get<MarketplaceConversation[]>("/marketplace/conversations")).data,
-  createOffer: async (listingId: string, payload: { amount: number; depositAmount: number; message?: string }) =>
-    (await apiClient.post<Record<string, unknown>>(`/marketplace/listings/${listingId}/offers`, payload)).data,
   myOffers: async () => (await apiClient.get<Array<Record<string, unknown>>>("/marketplace/offers/mine")).data,
-  acceptOffer: async (offerId: string) =>
-    (await apiClient.post<Record<string, unknown>>(`/marketplace/offers/${offerId}/accept`)).data,
   myTransactions: async () =>
     (await apiClient.get<Array<Record<string, unknown>>>("/marketplace/transactions/mine")).data,
   createSellerReview: async (transactionId: string, payload: { rating: number; comment?: string }) =>
@@ -138,14 +148,8 @@ export const marketplaceAPI = {
     (await apiClient.post<MarketplaceAppointment>(`/marketplace/listings/${listingId}/appointments`, payload)).data,
   myAppointments: async () =>
     (await apiClient.get<MarketplaceAppointment[]>("/marketplace/appointments/mine")).data,
-  updateAppointment: async (appointmentId: string, payload: { status: string; note?: string }) =>
+  updateAppointment: async (appointmentId: string, payload: { status: string; note?: string;scheduledAt?:string;location?:string;revision?:number }) =>
     (await apiClient.patch<MarketplaceAppointment>(`/marketplace/appointments/${appointmentId}`, payload)).data,
-  createPayment: async (transactionId: string, stage: "DEPOSIT" | "FINAL", provider: "VNPAY" | "BANK_TRANSFER" | "CASH_ON_DELIVERY") =>
-    (await apiClient.post<Record<string, unknown>>(`/marketplace/transactions/${transactionId}/payments`, { stage, provider })).data,
-  confirmMarketplacePayment: async (paymentId: string) =>
-    (await apiClient.post<Record<string, unknown>>(`/marketplace/payments/${paymentId}/confirm`)).data,
-  confirmHandover: async (transactionId: string) =>
-    (await apiClient.post<Record<string, unknown>>(`/marketplace/transactions/${transactionId}/handover/confirm`)).data
 };
 
 export const formatMarketplacePrice = (price: number) =>

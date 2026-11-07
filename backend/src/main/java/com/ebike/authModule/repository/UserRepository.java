@@ -35,4 +35,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmail(String email);
 
     boolean existsByUsername(String username);
+
+    @org.springframework.data.jpa.repository.Query(value = "select exists(select 1 from ebike_auth.users where id<>:excludedId and (case when phone_number like '0%' then '+84'||substring(phone_number from 2) else phone_number end)=:phone)", nativeQuery = true)
+    boolean phoneInUse(@org.springframework.data.repository.query.Param("phone") String phone,
+                       @org.springframework.data.repository.query.Param("excludedId") Long excludedId);
 }

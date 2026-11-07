@@ -31,16 +31,18 @@ public class MarketplaceSellerReviewService {
             where public_id = ?
             for update
             """, transactionPublicId);
-        if (((Number) transaction.get("buyer_id")).longValue() != reviewer.getId()) {
+        long buyerId=((Number)transaction.get("buyer_id")).longValue();
+        long sellerId=((Number)transaction.get("seller_id")).longValue();
+        if (buyerId != reviewer.getId() && sellerId != reviewer.getId()) {
             throw forbidden();
         }
         if (!"COMPLETED".equals(transaction.get("status"))) {
             throw badRequest("Chỉ có thể đánh giá sau khi giao dịch hoàn tất");
         }
         Integer existing = jdbc.queryForObject(
-            "select count(*) from marketplace.seller_reviews where transaction_id = ?",
+            "select count(*) from marketplace.seller_reviews where transaction_id = ? and reviewer_id=?",
             Integer.class,
-            transaction.get("id")
+            transaction.get("id"),reviewer.getId()
         );
         if (existing != null && existing > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Giao dịch này đã được đánh giá");
@@ -50,30 +52,34 @@ public class MarketplaceSellerReviewService {
             insert into marketplace.seller_reviews(transaction_id, reviewer_id, seller_id, rating, comment)
             values (?, ?, ?, ?, ?)
             returning id
-            """, Long.class, transaction.get("id"), reviewer.getId(), transaction.get("seller_id"), request.rating(), comment);
+            """, Long.class, transaction.get("id"), reviewer.getId(), buyerId==reviewer.getId()?sellerId:buyerId, request.rating(), comment);
         return review(id);
     }
 
     @Transactional(readOnly = true)
     public Map<String, Object> reputation(Long sellerId) {
         Map<String, Object> seller = one("""
-            select id, username, first_name as "firstName", last_name as "lastName", created_at as "createdAt"
+            select id, username, first_name as "firstName", last_name as "lastName", created_at as "createdAt",
+                   avatar_url as "avatarUrl", is_verified as verified,
+                   email_verified_at as "emailVerifiedAt", phone_verified_at as "phoneVerifiedAt"
             from ebike_auth.users
             where id = ? and is_active = true
             """, sellerId);
         Map<String, Object> summary = one("""
             select coalesce(round(avg(rating)::numeric, 2), 0) as "averageRating",
-                   count(*) as "reviewCount"
+                   count(*) as "reviewCount",
+                   (select count(*) from marketplace.vehicle_listings where seller_id=? and status='PUBLISHED') as "activeListingCount",
+                   (select count(*) from marketplace.transactions where (seller_id=? or (buyer_id=? and exchange_listing_id is not null)) and status='COMPLETED') as "completedVehicleCount"
             from marketplace.seller_reviews
-            where seller_id = ?
-            """, sellerId);
+            where seller_id = ? and status='VISIBLE'
+            """, sellerId, sellerId, sellerId, sellerId);
         List<Map<String, Object>> reviews = jdbc.queryForList("""
-            select r.public_id as "publicId", r.rating, r.comment,
+            select r.public_id as "publicId", r.rating, r.comment,r.reply,r.replied_at as "repliedAt",r.reviewer_id as "reviewerId",r.seller_id as "targetId",
                    r.created_at as "createdAt", u.username as "reviewerUsername",
                    coalesce(nullif(trim(u.first_name || ' ' || u.last_name), ''), u.username) as "reviewerName"
             from marketplace.seller_reviews r
             join ebike_auth.users u on u.id = r.reviewer_id
-            where r.seller_id = ?
+            where r.seller_id = ? and r.status='VISIBLE'
             order by r.created_at desc
             limit 50
             """, sellerId);

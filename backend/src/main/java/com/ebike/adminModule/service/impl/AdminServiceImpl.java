@@ -264,6 +264,7 @@ public class AdminServiceImpl implements AdminService {
 
         user.setAccountStatus(status);
         user.setActive("ACTIVE".equals(status));
+        if (!"ACTIVE".equals(status)) user.setTokenVersion(user.getTokenVersion() + 1);
         User saved = userRepository.save(user);
         writeAudit("cập nhật trạng thái tài khoản", displayName(saved) + " thành " + status);
         return toAccountResponse(saved);
@@ -279,6 +280,7 @@ public class AdminServiceImpl implements AdminService {
         String target = displayName(user);
         user.setActive(false);
         user.setAccountStatus("INACTIVE");
+        user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
         writeAudit("vô hiệu hóa tài khoản", target);
     }

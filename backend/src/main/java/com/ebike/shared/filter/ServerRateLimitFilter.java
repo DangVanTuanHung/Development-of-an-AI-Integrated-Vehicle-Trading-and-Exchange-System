@@ -28,6 +28,12 @@ public class ServerRateLimitFilter extends OncePerRequestFilter {
     private final Map<String, TokenBucket> buckets = new ConcurrentHashMap<>();
     private final List<RateLimitRule> rules = List.of(
         new RateLimitRule("auth-login", HttpMethod.POST.name(), "/auth/login", 5, Duration.ofMinutes(1)),
+        new RateLimitRule("auth-login-variants", HttpMethod.POST.name(), "/auth/login/**", 5, Duration.ofMinutes(1)),
+        new RateLimitRule("password-reset-request", HttpMethod.POST.name(), "/auth/password-reset/request", 3, Duration.ofMinutes(5)),
+        new RateLimitRule("password-reset-confirm", HttpMethod.POST.name(), "/auth/password-reset/confirm", 10, Duration.ofMinutes(5)),
+        new RateLimitRule("account-otp-request", HttpMethod.POST.name(), "/auth/verification/*/request", 3, Duration.ofMinutes(5)),
+        new RateLimitRule("account-otp-confirm", HttpMethod.POST.name(), "/auth/verification/*/confirm", 10, Duration.ofMinutes(5)),
+        new RateLimitRule("listing-engagement", HttpMethod.POST.name(), "/marketplace/listings/*/engagement", 60, Duration.ofMinutes(1)),
         new RateLimitRule("email-otp-send", HttpMethod.POST.name(), "/orders/email-verification/send", 3, Duration.ofMinutes(5)),
         new RateLimitRule("chatbot-ask", HttpMethod.POST.name(), "/chatbot/ask", 20, Duration.ofMinutes(1)),
         new RateLimitRule("vnpay-create", HttpMethod.POST.name(), "/payments/vnpay/create", 10, Duration.ofMinutes(1))

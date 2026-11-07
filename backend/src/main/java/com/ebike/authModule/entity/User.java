@@ -62,6 +62,13 @@ public class User {
 
     @Column(name = "email_verified_at")
     private LocalDateTime emailVerifiedAt;
+    @Column(name = "phone_verified_at")
+    private LocalDateTime phoneVerifiedAt;
+    @Column(name = "token_version", nullable = false)
+    private long tokenVersion;
+    @jakarta.persistence.Version
+    @Column(name = "account_version", nullable = false)
+    private long accountVersion;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -186,6 +193,10 @@ public class User {
     public void setEmailVerifiedAt(LocalDateTime emailVerifiedAt) {
         this.emailVerifiedAt = emailVerifiedAt;
     }
+    public LocalDateTime getPhoneVerifiedAt() { return phoneVerifiedAt; }
+    public void setPhoneVerifiedAt(LocalDateTime value) { phoneVerifiedAt = value; }
+    public long getTokenVersion() { return tokenVersion; }
+    public void setTokenVersion(long value) { tokenVersion = value; }
 
     public LocalDateTime getCreatedAt() {
         return createdAt;

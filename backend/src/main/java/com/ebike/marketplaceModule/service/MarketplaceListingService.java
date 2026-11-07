@@ -55,6 +55,14 @@ public class MarketplaceListingService {
     }
 
     @Transactional(readOnly = true)
+    public List<ListingResponse> sellerListings(Long sellerId) {
+        User seller = userRepository.findById(sellerId).filter(user -> Boolean.TRUE.equals(user.getActive()))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        return listingRepository.findBySellerUsernameOrderByCreatedAtDesc(seller.getUsername()).stream()
+            .filter(listing -> "PUBLISHED".equals(listing.getStatus())).map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
     public ListingResponse detail(UUID publicId) {
         return listingRepository.findByPublicId(publicId).map(this::toResponse)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
@@ -66,6 +74,7 @@ public class MarketplaceListingService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
         Integer categoryCount = jdbcTemplate.queryForObject("select count(*) from marketplace.vehicle_categories where id = ? and active", Integer.class, request.categoryId());
         if (categoryCount == null || categoryCount == 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid category");
+        validateCatalog(request);
         String listingType = request.listingType().trim().toUpperCase(Locale.ROOT);
         String condition = request.condition().trim().toUpperCase(Locale.ROOT);
         if (!LISTING_TYPES.contains(listingType)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid listing type");
@@ -75,6 +84,7 @@ public class MarketplaceListingService {
         listing.setSeller(seller);
         listing.setCategoryId(request.categoryId());
         listing.setBrandId(request.brandId());
+        listing.setModelId(request.modelId());
         listing.setTitle(request.title().trim());
         listing.setSlug(slugify(request.title()) + "-" + UUID.randomUUID().toString().substring(0, 8));
         listing.setDescription(request.description().trim());
@@ -88,6 +98,7 @@ public class MarketplaceListingService {
         listing.setDistrict(normalizeOptional(request.district()));
         listing.setAddressText(normalizeOptional(request.addressText()));
         listing = listingRepository.save(listing);
+        jdbcTemplate.update("insert into marketplace.listing_price_history(listing_id,actor_id,price) values (?,?,?)",listing.getId(),seller.getId(),listing.getPrice());
         jdbcTemplate.update("""
             insert into marketplace.vehicle_details
               (listing_id, manufacture_year, registration_year, mileage_km, exterior_color, fuel_type,
@@ -103,8 +114,29 @@ public class MarketplaceListingService {
         return jdbcTemplate.queryForList("select id, name, slug, parent_id as \"parentId\" from marketplace.vehicle_categories where active order by name");
     }
 
+    public List<Map<String, Object>> brands() {
+        return jdbcTemplate.queryForList("select id, name, slug from marketplace.vehicle_brands where active order by name");
+    }
+
+    public List<Map<String, Object>> models(Long brandId, Long categoryId) {
+        return jdbcTemplate.queryForList("select id, name, slug, brand_id as \"brandId\", category_id as \"categoryId\" from marketplace.vehicle_models where active and brand_id=? and category_id=? order by name", brandId, categoryId);
+    }
+
+    private void validateCatalog(CreateListingRequest request) {
+        if (request.brandId() != null && !Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+            "select exists(select 1 from marketplace.vehicle_brands where id=? and active)", Boolean.class, request.brandId()))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Hãng xe không hợp lệ hoặc đã ngừng sử dụng");
+        }
+        if (request.modelId() != null && (request.brandId() == null || !Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+            "select exists(select 1 from marketplace.vehicle_models where id=? and brand_id=? and category_id=? and active)",
+            Boolean.class, request.modelId(), request.brandId(), request.categoryId())))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dòng xe phải thuộc hãng và loại phương tiện đã chọn");
+        }
+    }
+
     @Transactional
     public Map<String, Object> toggleFavorite(String username, UUID publicId) {
+        jdbcTemplate.queryForList("select id from marketplace.vehicle_listings where public_id=? for update",publicId);
         VehicleListing listing = listingRepository.findByPublicId(publicId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
         User user = userRepository.findByUsername(username)
@@ -157,12 +189,15 @@ public class MarketplaceListingService {
 
     @Transactional
     public Map<String, Object> uploadImage(String username, UUID publicId, MultipartFile file) {
+        jdbcTemplate.queryForList("select id from marketplace.vehicle_listings where public_id=? for update",publicId);
         VehicleListing listing = listingRepository.findByPublicId(publicId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
         if (!listing.getSeller().getUsername().equals(username))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the listing owner can upload images");
         if (!java.util.Set.of("DRAFT","REJECTED").contains(listing.getStatus()))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Chỉ thêm ảnh khi tin là bản nháp hoặc bị trả lại. Hãy sửa tin trước.");
+        Integer mediaCount=jdbcTemplate.queryForObject("select count(*) from marketplace.vehicle_images where listing_id=?",Integer.class,listing.getId());
+        if(mediaCount!=null && mediaCount>=12) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Mỗi tin tối đa 12 ảnh/video.");
         if (file == null || file.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Image is required");
         if (file.getSize() > maxImageBytes) throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Image exceeds 10 MB");
         String mime = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
@@ -199,6 +234,7 @@ public class MarketplaceListingService {
 
     @Transactional
     public ListingResponse publish(String username, UUID publicId) {
+        jdbcTemplate.queryForList("select id from marketplace.vehicle_listings where public_id=? for update",publicId);
         VehicleListing listing = listingRepository.findByPublicId(publicId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Listing not found"));
         if (!listing.getSeller().getUsername().equals(username)) {
@@ -224,13 +260,14 @@ public class MarketplaceListingService {
         VehicleListing listing = listingRepository.findByPublicId(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         boolean owner = auth != null && listing.getSeller().getUsername().equals(auth.getName());
         boolean staff = auth != null && auth.getAuthorities().stream().anyMatch(a -> java.util.Set.of("ROLE_ADMIN","ROLE_MANAGER").contains(a.getAuthority()));
-        if (!java.util.Set.of("PUBLISHED","RESERVED","SOLD").contains(listing.getStatus()) && !owner && !staff)
+        if (!java.util.Set.of("PUBLISHED","RESERVED","SOLD","EXCHANGED").contains(listing.getStatus()) && !owner && !staff)
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tin chưa được công khai");
         return toResponse(listing);
     }
 
     @Transactional
     public ListingResponse edit(String username, UUID id, CreateListingRequest request) {
+        jdbcTemplate.queryForList("select id from marketplace.vehicle_listings where public_id=? for update",id);
         VehicleListing listing = listingRepository.findByPublicId(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if (!listing.getSeller().getUsername().equals(username)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         if (!java.util.Set.of("DRAFT","REJECTED","PUBLISHED","PENDING_REVIEW").contains(listing.getStatus()))
@@ -239,10 +276,16 @@ public class MarketplaceListingService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Thông tin xe không hợp lệ");
         Integer count=jdbcTemplate.queryForObject("select count(*) from marketplace.vehicle_categories where id=? and active",Integer.class,request.categoryId());
         if(count==null || count==0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Danh mục không hợp lệ");
+        validateCatalog(request);
+        if (listing.getPrice().compareTo(request.price()) != 0) {
+            jdbcTemplate.update("insert into marketplace.listing_price_history(listing_id,actor_id,previous_price,price) values (?,?,?,?)",listing.getId(),listing.getSeller().getId(),listing.getPrice(),request.price());
+        }
         listing.setTitle(request.title().trim()); listing.setDescription(request.description().trim());
         listing.setCategoryId(request.categoryId()); listing.setBrandId(request.brandId());
+        listing.setModelId(request.modelId());
         listing.setPrice(request.price()); listing.setCondition(request.condition()); listing.setListingType(request.listingType());
         listing.setProvince(request.province().trim()); listing.setDistrict(normalizeOptional(request.district()));
+        listing.setAddressText(normalizeOptional(request.addressText()));
         listing.setNegotiable(request.negotiable()); listing.setExchangeAllowed(request.exchangeAllowed());
         listing.setStatus("DRAFT");
         jdbcTemplate.update("""
@@ -256,6 +299,7 @@ public class MarketplaceListingService {
 
     @Transactional
     public ListingResponse removeImage(String username, UUID id, String url) {
+        jdbcTemplate.queryForList("select id from marketplace.vehicle_listings where public_id=? for update",id);
         VehicleListing listing=listingRepository.findByPublicId(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if(!listing.getSeller().getUsername().equals(username)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         if(!java.util.Set.of("DRAFT","REJECTED","PUBLISHED","PENDING_REVIEW").contains(listing.getStatus()))
@@ -268,6 +312,7 @@ public class MarketplaceListingService {
 
     @Transactional
     public ListingResponse withdraw(String username, UUID id) {
+        jdbcTemplate.queryForList("select id from marketplace.vehicle_listings where public_id=? for update",id);
         VehicleListing listing=listingRepository.findByPublicId(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         if(!listing.getSeller().getUsername().equals(username)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         if(!java.util.Set.of("DRAFT","REJECTED","PUBLISHED","PENDING_REVIEW").contains(listing.getStatus()))
@@ -292,7 +337,10 @@ public class MarketplaceListingService {
         return new ListingResponse(listing.getId(), listing.getPublicId(), seller.getId(), sellerName, seller.getPhoneNumber(), listing.getCategoryId(), listing.getBrandId(), listing.getTitle(), listing.getSlug(), listing.getDescription(), listing.getListingType(), listing.getCondition(), listing.getStatus(), listing.getPrice(), listing.isNegotiable(), listing.isExchangeAllowed(), listing.getProvince(), listing.getDistrict(), listing.getAddressText(), imageUrl, images,
             integerValue(details.get("manufacture_year")), integerValue(details.get("registration_year")), integerValue(details.get("mileage_km")), (String) details.get("exterior_color"), (String) details.get("fuel_type"), (String) details.get("transmission"), integerValue(details.get("engine_capacity_cc")), integerValue(details.get("range_km")), integerValue(details.get("seats")), integerValue(details.get("owners_count")), (String) details.get("origin"),
             listing.getViewCount(), listing.getFavoriteCount(), listing.getPublishedAt(), listing.getCreatedAt(),
-            jdbcTemplate.query("select note from marketplace.listing_moderations where listing_id=? and reason_code is distinct from 'USER_REPORT' order by id desc limit 1", rs -> rs.next() ? rs.getString(1) : null, listing.getId()));
+            jdbcTemplate.query("select note from marketplace.listing_moderations where listing_id=? and reason_code is distinct from 'USER_REPORT' order by id desc limit 1", rs -> rs.next() ? rs.getString(1) : null, listing.getId()),
+            Boolean.TRUE.equals(seller.getVerified()), listing.getModelId(),
+            listing.getBrandId() == null ? null : jdbcTemplate.query("select name from marketplace.vehicle_brands where id=?", rs -> rs.next() ? rs.getString(1) : null, listing.getBrandId()),
+            listing.getModelId() == null ? null : jdbcTemplate.query("select name from marketplace.vehicle_models where id=?", rs -> rs.next() ? rs.getString(1) : null, listing.getModelId()));
     }
 
     private String slugify(String value) {

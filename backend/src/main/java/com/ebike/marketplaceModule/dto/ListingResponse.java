@@ -42,5 +42,9 @@ public record ListingResponse(
     long favoriteCount,
     OffsetDateTime publishedAt,
     OffsetDateTime createdAt,
-    String moderationNote
+    String moderationNote,
+    boolean sellerVerified,
+    Long modelId,
+    String brandName,
+    String modelName
 ) {}

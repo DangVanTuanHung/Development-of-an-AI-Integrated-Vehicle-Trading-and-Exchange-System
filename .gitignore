@@ -58,3 +58,4 @@ __pycache__/
 backend/data-backup/ebike_db_*.sql
 
 .history/
+/.local-checks/

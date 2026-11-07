@@ -17,6 +17,7 @@ import com.ebike.authModule.repository.UserRepository;
 import com.ebike.authModule.service.AuthenticationService;
 import com.ebike.authModule.service.JwtTokenProvider;
 import com.ebike.authModule.service.PermissionService;
+import com.ebike.authModule.service.AccountCodeDelivery;
 import com.ebike.orderModule.entity.Order;
 import com.ebike.orderModule.repository.OrderRepository;
 import java.time.LocalDateTime;
@@ -90,8 +91,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         user.setLastName(trimToNull(request.lastName()));
         String phoneNumber = trimToNull(request.phoneNumber());
         if (phoneNumber != null) {
-            phoneNumber = phoneNumber.replaceAll("[^0-9+]", "");
-            if (!phoneNumber.matches("^(?:\\+84|0)[0-9]{9,10}$")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại không hợp lệ");
+            phoneNumber = AccountCodeDelivery.normalizePhone(phoneNumber);
+            if(userRepository.phoneInUse(phoneNumber,0L)) throw new ResponseStatusException(HttpStatus.CONFLICT,"Số điện thoại đã được sử dụng.");
         }
         user.setPhoneNumber(phoneNumber);
         user.setActive(true);
@@ -203,15 +204,20 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         user.setLastName(trimToNull(request.lastName()));
         String profilePhoneNumber = trimToNull(request.phoneNumber());
         if (profilePhoneNumber != null) {
-            profilePhoneNumber = profilePhoneNumber.replaceAll("[^0-9+]", "");
-            if (!profilePhoneNumber.matches("^(?:\\+84|0)[0-9]{9,10}$")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại không hợp lệ");
+            profilePhoneNumber = AccountCodeDelivery.normalizePhone(profilePhoneNumber);
+            if(userRepository.phoneInUse(profilePhoneNumber,user.getId())) throw new ResponseStatusException(HttpStatus.CONFLICT,"Số điện thoại đã được sử dụng.");
         }
+        if (!java.util.Objects.equals(user.getPhoneNumber(), profilePhoneNumber)) user.setPhoneVerifiedAt(null);
         user.setPhoneNumber(profilePhoneNumber);
         String requestedEmail = trimToNull(request.email());
         if (requestedEmail != null) {
             String normalizedEmail = requestedEmail.toLowerCase(Locale.ROOT);
             if (!normalizedEmail.equalsIgnoreCase(user.getEmail()) && userRepository.existsByEmail(normalizedEmail)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already exists");
+            }
+            if (!normalizedEmail.equalsIgnoreCase(user.getEmail())) {
+                user.setEmailVerifiedAt(null);
+                user.setVerified(false);
             }
             user.setEmail(normalizedEmail);
         }
@@ -241,6 +247,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         if (newPassword.length() < 6) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New password must be at least 6 characters");
         }
+        if(newPassword.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>72) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Mật khẩu tối đa 72 byte UTF-8.");
 
         User user = findUser(usernameOrEmail);
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
@@ -248,6 +255,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         }
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
     }
 
@@ -294,6 +302,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         if (request.password().trim().length() < 6) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password must be at least 6 characters");
         }
+        if(request.password().getBytes(java.nio.charset.StandardCharsets.UTF_8).length>72) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Mật khẩu tối đa 72 byte UTF-8.");
     }
 
     private AuthResponse toAuthResponse(User user) {
@@ -345,7 +354,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
             user.getActive(),
             user.getVerified(),
             extractRoleNames(user),
-            permissionService.resolvePermissionCodes(user)
+            permissionService.resolvePermissionCodes(user),
+            user.getEmailVerifiedAt(),
+            user.getPhoneVerifiedAt()
         );
     }
 

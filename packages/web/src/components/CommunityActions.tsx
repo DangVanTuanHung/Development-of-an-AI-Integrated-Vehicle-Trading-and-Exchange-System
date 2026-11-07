@@ -1,0 +1,13 @@
+import {useState} from "react";
+import {useAuth} from "@ebike/shared-code/hooks";
+import {communityAPI,errorMessage,type Review} from "../services/community";
+export const actionButton="rounded-lg border px-3 py-2 text-sm font-semibold text-violet-700 disabled:opacity-40";
+export function ReportButton({type,target}:{type:string;target:string}){
+ const {isAuthenticated}=useAuth();const [open,setOpen]=useState(false),[reason,setReason]=useState("SCAM"),[note,setNote]=useState(""),[status,setStatus]=useState(""),[busy,setBusy]=useState(false);
+ if(!isAuthenticated)return null;
+ return <div><button type="button" className={actionButton} onClick={()=>setOpen(x=>!x)}>Báo cáo {type==="USER"?"người dùng":type==="MESSAGE"?"tin nhắn":type==="REVIEW"?"đánh giá":"bình luận"}</button>{open&&<form className="mt-3 space-y-2 rounded-xl border bg-white p-3" onSubmit={async e=>{e.preventDefault();setBusy(true);try{await communityAPI.report(type,target,reason,note);setOpen(false);setStatus("Đã gửi báo cáo. Theo dõi tại Quản lý Marketplace.");}catch(err){setStatus(errorMessage(err));}finally{setBusy(false);}}}><select aria-label="Lý do báo cáo" className="input-base" value={reason} onChange={e=>setReason(e.target.value)}>{[["SCAM","Nghi lừa đảo"],["FALSE_INFORMATION","Thông tin sai"],["SPAM","Spam"],["OFFENSIVE","Nội dung phản cảm"],["OTHER","Khác"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select><textarea required maxLength={2000} aria-label="Chi tiết báo cáo" placeholder="Mô tả vấn đề cần xử lý" value={note} onChange={e=>setNote(e.target.value)} className="input-base"/><button disabled={busy} className={actionButton}>Gửi báo cáo</button></form>}{status&&<p role="status" className="mt-2 text-sm">{status}</p>}</div>;
+}
+export function ReviewActions({review,onChange}:{review:Review;onChange?:()=>void}){
+ const {user,isAuthenticated}=useAuth();const [reply,setReply]=useState(review.reply||""),[error,setError]=useState("");
+ return <div className="mt-3 space-y-2">{review.reply&&<p className="rounded-lg bg-violet-50 p-3 text-sm"><b>Phản hồi:</b> {review.reply}</p>}{isAuthenticated&&Number(user?.id)===Number(review.targetId)&&<form onSubmit={async e=>{e.preventDefault();try{await communityAPI.reply(review.publicId,reply);setError("Đã lưu phản hồi.");onChange?.();}catch(err){setError(errorMessage(err));}}}><textarea aria-label="Phản hồi đánh giá" required maxLength={2000} value={reply} onChange={e=>setReply(e.target.value)} className="input-base"/><button className={actionButton}>Lưu phản hồi đánh giá</button></form>}{isAuthenticated&&Number(user?.id)!==Number(review.reviewerId)&&<ReportButton type="REVIEW" target={review.publicId}/>}<p role="status" className="text-sm">{error}</p></div>;
+}

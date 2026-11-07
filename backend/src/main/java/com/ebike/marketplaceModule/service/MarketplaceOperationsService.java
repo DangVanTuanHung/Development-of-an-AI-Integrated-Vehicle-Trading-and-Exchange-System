@@ -14,13 +14,14 @@ import org.springframework.web.server.ResponseStatusException;
 public class MarketplaceOperationsService {
     private final JdbcTemplate jdbc;
     private final AdminAuditLogRepository audit;
-    public MarketplaceOperationsService(JdbcTemplate jdbc, AdminAuditLogRepository audit) { this.jdbc=jdbc; this.audit=audit; }
+    private final MarketplaceTransactionService trades;
+    public MarketplaceOperationsService(JdbcTemplate jdbc, AdminAuditLogRepository audit, MarketplaceTransactionService trades) { this.jdbc=jdbc; this.audit=audit; this.trades=trades; }
 
     public Map<String,Object> overview() {
         return one("""
             select (select count(*) from marketplace.vehicle_listings where status='PENDING_REVIEW') as "pendingListings",
             (select count(*) from marketplace.vehicle_listings where status='PUBLISHED') as "activeListings",
-            (select count(*) from marketplace.listing_reports where status='OPEN') as "openReports",
+            ((select count(*) from marketplace.listing_reports where status='OPEN')+(select count(*) from marketplace.community_reports where status='OPEN')) as "openReports",
             (select count(*) from marketplace.transactions where status not in ('COMPLETED','CANCELLED','REFUNDED')) as "activeTransactions",
             (select count(*) from marketplace.transactions where status='DISPUTED') as "disputedTransactions",
             (select count(*) from marketplace.transactions where status='COMPLETED') as "completedTransactions",
@@ -66,6 +67,7 @@ public class MarketplaceOperationsService {
             if (count==null || count==0) throw bad("Tin cần có ảnh hợp lệ trước khi duyệt");
         }
         jdbc.update("update marketplace.vehicle_listings set status=?, published_at=case when ?='PUBLISHED' then now() else published_at end, updated_at=now(), version=version+1 where id=?", next,next,listing.get("id"));
+        if ("PUBLISHED".equals(next)) jdbc.update("update marketplace.vehicle_listings set expires_at=now()+interval '30 days' where id=?",listing.get("id"));
         String decision=switch(next) { case "PUBLISHED" -> "APPROVED"; case "REJECTED" -> "REJECTED"; case "SUSPENDED" -> "SUSPENDED"; default -> "PENDING"; };
         jdbc.update("insert into marketplace.listing_moderations(listing_id,reviewer_id,decision,reason_code,note) values (?,?,?,?,?)",listing.get("id"),actor,decision,body.get("reason"),action+": "+body.getOrDefault("note",""));
         log(username,"LISTING_"+action,id+" | "+body.getOrDefault("note",""));
@@ -112,31 +114,11 @@ public class MarketplaceOperationsService {
     }
     @Transactional
     public Map<String,Object> dispute(String username, UUID id, String note) {
-        requireNote(note);
-        long actor=actor(username);
-        Map<String,Object> tx=one("select * from marketplace.transactions where public_id=? for update",id);
-        if(actor==number(tx.get("buyer_id")) || actor==number(tx.get("seller_id"))) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Không tự xử lý giao dịch của mình");
-        String status=String.valueOf(tx.get("status"));
-        if (Set.of("COMPLETED","CANCELLED","REFUNDED","DISPUTED").contains(status)) throw new ResponseStatusException(HttpStatus.CONFLICT,"Không thể mở tranh chấp ở trạng thái này");
-        jdbc.update("update marketplace.transactions set status='DISPUTED',updated_at=now(),version=version+1 where id=?",tx.get("id"));
-        jdbc.update("insert into marketplace.transaction_events(transaction_id,actor_id,from_status,to_status,event_type,note) values (?,?,?,'DISPUTED','STAFF_OPENED_DISPUTE',?)",tx.get("id"),actor,status,note);
-        log(username,"TRANSACTION_DISPUTED",id+" | "+note);
-        return Map.of("status","DISPUTED");
+        return trades.dispute(username,id,note,true);
     }
     @Transactional
     public Map<String,Object> resume(String username, UUID id, String note) {
-        requireNote(note);
-        long actor=actor(username);
-        Map<String,Object> tx=one("select * from marketplace.transactions where public_id=? for update",id);
-        if(actor==number(tx.get("buyer_id")) || actor==number(tx.get("seller_id"))) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Không tự xử lý giao dịch của mình");
-        if(!"DISPUTED".equals(tx.get("status"))) throw new ResponseStatusException(HttpStatus.CONFLICT,"Giao dịch không đang tranh chấp");
-        Map<String,Object> event=one("select from_status from marketplace.transaction_events where transaction_id=? and event_type='STAFF_OPENED_DISPUTE' order by id desc limit 1",tx.get("id"));
-        String previous=String.valueOf(event.get("from_status"));
-        if(java.util.Set.of("DISPUTED","COMPLETED","CANCELLED","REFUNDED").contains(previous)) throw bad("Không thể khôi phục trạng thái này");
-        jdbc.update("update marketplace.transactions set status=?,updated_at=now(),version=version+1 where id=?",previous,tx.get("id"));
-        jdbc.update("insert into marketplace.transaction_events(transaction_id,actor_id,from_status,to_status,event_type,note) values (?,?,'DISPUTED',?,'STAFF_RESOLVED_DISPUTE',?)",tx.get("id"),actor,previous,note);
-        log(username,"TRANSACTION_RESUMED",id+" | "+note);
-        return Map.of("status",previous);
+        return trades.resolveDispute(username,id,"RESUME",note);
     }
 
     private void log(String actor,String action,String target) {

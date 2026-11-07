@@ -1,4 +1,12 @@
 services:
+  mailpit:
+    image: axllent/mailpit:v1.27.10
+    container_name: motionx-mailpit
+    ports:
+      - "127.0.0.1:8025:8025"
+    networks:
+      - ebike-network
+    restart: unless-stopped
   # =====================================================
   # PostgreSQL Database
   # =====================================================
@@ -122,7 +130,7 @@ services:
       SERVER_COMPRESSION_ENABLED: "true"
       
       # ========== JWT Security ==========
-      APP_JWT_SECRET: your-secret-key-here-minimum-256-bits-required-for-security
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-your-secret-key-here-minimum-256-bits-required-for-security}
       APP_JWT_EXPIRATION: 86400000
       APP_JWT_REFRESH_EXPIRATION: 604800000
       
@@ -139,8 +147,18 @@ services:
       
       # ========== Environment ==========
       SPRING_PROFILES_ACTIVE: dev
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_AUTH: ${SMTP_AUTH:-false}
+      SMTP_STARTTLS_ENABLE: ${SMTP_STARTTLS_ENABLE:-false}
+      AUTH_VERIFICATION_FROM: ${AUTH_VERIFICATION_FROM:-no-reply@motionx.local}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_VERIFY_SERVICE_SID: ${TWILIO_VERIFY_SERVICE_SID:-}
       ENVIRONMENT: development
-      GEMINI_AI_ENABLED: "true"
+      GEMINI_AI_ENABLED: ${GEMINI_AI_ENABLED:-true}
       GEMINI_AI_KEY: ${GEMINI_AI_KEY:-}
       GEMINI_AI_MODEL: ${GEMINI_AI_MODEL:-gemini-3.6-flash}
       GEMINI_CONNECT_TIMEOUT_MS: ${GEMINI_CONNECT_TIMEOUT_MS:-2500}
@@ -148,13 +166,18 @@ services:
       GEMINI_VISION_READ_TIMEOUT_MS: ${GEMINI_VISION_READ_TIMEOUT_MS:-45000}
       GEMINI_MAX_ATTEMPTS: ${GEMINI_MAX_ATTEMPTS:-1}
       GEMINI_RETRY_DELAY_MS: ${GEMINI_RETRY_DELAY_MS:-0}
-      APP_STORAGE_S3_ENDPOINT: http://minio:9000
-      APP_STORAGE_S3_ACCESS_KEY: marketplace_admin
-      APP_STORAGE_S3_SECRET_KEY: marketplace_local_password_123
-      APP_STORAGE_S3_BUCKET: vehicle-marketplace
-      APP_STORAGE_S3_REGION: us-east-1
-      APP_STORAGE_S3_PUBLIC_BASE_URL: http://localhost:9000/vehicle-marketplace
-      APP_STORAGE_S3_PATH_STYLE_ACCESS: "true"
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
+      VNPAY_PAY_URL: ${VNPAY_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-http://localhost:5173/payment/return}
+      VNPAY_IPN_URL: ${VNPAY_IPN_URL:-http://localhost:8080/api/v1/payments/vnpay/ipn}
+      APP_STORAGE_S3_ENDPOINT: ${APP_STORAGE_S3_ENDPOINT:-http://minio:9000}
+      APP_STORAGE_S3_ACCESS_KEY: ${APP_STORAGE_S3_ACCESS_KEY:-marketplace_admin}
+      APP_STORAGE_S3_SECRET_KEY: ${APP_STORAGE_S3_SECRET_KEY:-marketplace_local_password_123}
+      APP_STORAGE_S3_BUCKET: ${APP_STORAGE_S3_BUCKET:-vehicle-marketplace}
+      APP_STORAGE_S3_REGION: ${APP_STORAGE_S3_REGION:-us-east-1}
+      APP_STORAGE_S3_PUBLIC_BASE_URL: ${APP_STORAGE_S3_PUBLIC_BASE_URL:-http://localhost:9000/vehicle-marketplace}
+      APP_STORAGE_S3_PATH_STYLE_ACCESS: ${APP_STORAGE_S3_PATH_STYLE_ACCESS:-true}
       APP_STORAGE_S3_INITIALIZE_BUCKET: "false"
       APP_MARKETPLACE_STORAGE_ROOT: /app/uploads/marketplace
       APP_MARKETPLACE_STORAGE_MAX_IMAGE_BYTES: 10485760
@@ -175,6 +198,8 @@ services:
       - ebike-network
     
     depends_on:
+      mailpit:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:

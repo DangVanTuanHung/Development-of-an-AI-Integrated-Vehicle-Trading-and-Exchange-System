@@ -31,6 +31,8 @@ public class VehicleListing {
     private Long categoryId;
     @Column(name = "brand_id")
     private Long brandId;
+    @Column(name = "model_id")
+    private Long modelId;
     @Column(nullable = false, length = 220)
     private String title;
     @Column(nullable = false, unique = true, length = 260)
@@ -86,6 +88,8 @@ public class VehicleListing {
     public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
     public Long getBrandId() { return brandId; }
     public void setBrandId(Long brandId) { this.brandId = brandId; }
+    public Long getModelId() { return modelId; }
+    public void setModelId(Long modelId) { this.modelId = modelId; }
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
     public String getSlug() { return slug; }

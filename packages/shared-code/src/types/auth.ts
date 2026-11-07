@@ -46,6 +46,8 @@ export interface SessionUser {
 }
 
 export interface UserProfileResponse {
+  emailVerifiedAt?: string | null;
+  phoneVerifiedAt?: string | null;
   userId: number;
   username: string;
   email: string;

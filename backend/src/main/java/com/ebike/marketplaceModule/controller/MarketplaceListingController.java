@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
@@ -26,9 +27,12 @@ public class MarketplaceListingController {
     public MarketplaceListingController(MarketplaceListingService service) { this.service = service; }
 
     @GetMapping("/categories") public List<Map<String, Object>> categories() { return service.categories(); }
+    @GetMapping("/brands") public List<Map<String, Object>> brands() { return service.brands(); }
+    @GetMapping("/models") public List<Map<String, Object>> models(@RequestParam Long brandId, @RequestParam Long categoryId) { return service.models(brandId, categoryId); }
     @GetMapping("/listings") public List<ListingResponse> listings() { return service.publicListings(); }
     @GetMapping("/listings/{publicId}") public ListingResponse detail(@PathVariable UUID publicId, Authentication auth) { return service.visibleDetail(publicId, auth); }
     @GetMapping("/seller/listings") public List<ListingResponse> own(Authentication auth) { return service.ownListings(auth.getName()); }
+    @GetMapping("/sellers/{sellerId}/listings") public List<ListingResponse> sellerListings(@PathVariable Long sellerId) { return service.sellerListings(sellerId); }
     @PostMapping("/listings") @ResponseStatus(HttpStatus.CREATED)
     public ListingResponse create(Authentication auth, @Valid @RequestBody CreateListingRequest request) { return service.create(auth.getName(), request); }
 

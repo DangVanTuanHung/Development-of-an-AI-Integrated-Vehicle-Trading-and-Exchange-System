@@ -58,7 +58,7 @@ public class AuthController {
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    public AuthResponse register(@RequestBody RegisterRequest request) {
+    public AuthResponse register(@jakarta.validation.Valid @RequestBody RegisterRequest request) {
         return authenticationService.register(request);
     }
 
@@ -159,17 +159,14 @@ public class AuthController {
         Authentication authentication,
         @RequestParam(required = false) String usernameOrEmail
     ) {
-        String resolvedIdentity = usernameOrEmail;
-        if ((resolvedIdentity == null || resolvedIdentity.isBlank()) && authentication != null) {
-            resolvedIdentity = authentication.getName();
-        }
-        return authenticationService.getProfile(resolvedIdentity);
+        if (authentication == null) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        return authenticationService.getProfile(authentication.getName());
     }
 
     @PutMapping("/profile")
     public UserProfileResponse updateProfile(
         Authentication authentication,
-        @RequestBody UpdateProfileRequest request
+        @jakarta.validation.Valid @RequestBody UpdateProfileRequest request
     ) {
         if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
             throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication is required");

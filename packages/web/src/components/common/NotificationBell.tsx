@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { notificationAPI } from "@ebike/shared-code/api";
 import type { UserNotification } from "@ebike/shared-code/types";
+import {useMarketplaceNotifications} from "../../hooks/useMarketplaceNotifications";
 
 type NotificationBellProps = {
   enabled: boolean;
@@ -18,7 +19,7 @@ const getNotificationTone = (type: string) => {
   return "bg-blue-50 text-blue-700";
 };
 
-const notificationTypeLabel = (type: string) => (type === "ORDER_STATUS" ? "Đơn hàng" : "Thanh toán");
+const notificationTypeLabel = (type: string) => (type === "MARKETPLACE" ? "Marketplace" : type === "ORDER_STATUS" ? "Đơn hàng" : "Thanh toán");
 
 const replaceText = (value: string, search: string, replacement: string) => value.split(search).join(replacement);
 
@@ -118,6 +119,7 @@ const NotificationBell = ({ enabled }: NotificationBellProps) => {
       void loadNotifications();
     }
   };
+  useMarketplaceNotifications(enabled,()=>{void loadNotifications();});
 
   const handleNotificationClick = async (notification: UserNotification) => {
     if (!notification.read) {
