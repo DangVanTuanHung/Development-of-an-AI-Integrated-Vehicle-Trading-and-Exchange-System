@@ -13,6 +13,8 @@ public record UserProfileResponse(
     Boolean active,
     Boolean verified,
     Set<String> roles,
-    Set<String> permissions
+    Set<String> permissions,
+    java.time.LocalDateTime emailVerifiedAt,
+    java.time.LocalDateTime phoneVerifiedAt
 ) {
 }

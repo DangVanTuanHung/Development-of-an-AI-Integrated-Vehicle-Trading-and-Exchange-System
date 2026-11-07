@@ -55,14 +55,21 @@ public class SecurityConfiguration {
                     "/auth/login/**",
                     "/auth/logout",
                     "/auth/session",
+                    "/auth/password-reset/request",
+                    "/auth/password-reset/confirm",
                     "/health/**",
                     "/media/**",
                     "/error"
                 ).permitAll()
                 .requestMatchers(HttpMethod.GET, "/products/**").hasAuthority(PermissionConstants.Guest.PRODUCT_VIEW)
                 .requestMatchers(HttpMethod.GET, "/marketplace/favorites", "/marketplace/listings/*/favorite").authenticated()
-                .requestMatchers(HttpMethod.GET, "/marketplace/sellers/*/reputation").permitAll()
-                .requestMatchers(HttpMethod.GET, "/marketplace/categories", "/marketplace/listings/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/marketplace/listings/*/statistics").authenticated()
+                .requestMatchers(HttpMethod.POST, "/marketplace/listings/*/engagement").permitAll()
+                .requestMatchers(HttpMethod.POST, "/marketplace/listings/*/manage/*").authenticated()
+                .requestMatchers(HttpMethod.GET, "/marketplace/community/comments/*", "/marketplace/discovery/search", "/marketplace/discovery/compare").permitAll()
+                .requestMatchers("/marketplace/community/**", "/marketplace/discovery/**", "/support/tickets/*/messages").authenticated()
+                .requestMatchers(HttpMethod.GET, "/marketplace/sellers/*/reputation", "/marketplace/sellers/*/listings").permitAll()
+                .requestMatchers(HttpMethod.GET, "/marketplace/categories", "/marketplace/brands", "/marketplace/models", "/marketplace/listings/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/marketplace/seller/**").authenticated()
                 .requestMatchers(HttpMethod.POST, "/marketplace/listings").authenticated()
                 .requestMatchers(HttpMethod.POST, "/marketplace/listings/*/images").authenticated()

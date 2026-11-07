@@ -52,6 +52,14 @@ public class NotificationStreamServiceImpl implements NotificationStreamService 
         }
     }
 
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay=15000)
+    public void heartbeat() {
+        emittersByUser.forEach((userId,emitters)->{for(SseEmitter emitter:emitters){
+            try{emitter.send(SseEmitter.event().comment("keep-alive"));}
+            catch(IOException|IllegalStateException ex){removeEmitter(userId,emitter);}
+        }});
+    }
+
     private void removeEmitter(Long userId, SseEmitter emitter) {
         List<SseEmitter> emitters = emittersByUser.get(userId);
         if (emitters == null) {

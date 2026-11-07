@@ -33,6 +33,7 @@ public class JwtTokenProvider {
         return Jwts.builder()
             .setSubject(user.getUsername())
             .claim("userId", user.getId())
+            .claim("tokenVersion", user.getTokenVersion())
             .claim("email", user.getEmail())
             .claim("roles", roles)
             .claim("fullName", buildFullName(user))
@@ -84,6 +85,11 @@ public class JwtTokenProvider {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    public boolean matchesTokenVersion(String token, User user) {
+        Object version = getClaims(token).get("tokenVersion");
+        return (version instanceof Number number ? number.longValue() : 0L) == user.getTokenVersion();
     }
 
     private Claims getClaims(String token) {

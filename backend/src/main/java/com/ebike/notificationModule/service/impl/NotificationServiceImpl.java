@@ -101,8 +101,8 @@ public class NotificationServiceImpl implements NotificationService {
             notification.getOrderId(),
             notification.getPaymentId(),
             notification.getReadAt() != null,
-            notification.getReadAt(),
-            notification.getCreatedAt()
+            notification.getReadAt()==null?null:notification.getReadAt().atOffset(java.time.ZoneOffset.UTC),
+            notification.getCreatedAt().atOffset(java.time.ZoneOffset.UTC)
         );
     }
 }

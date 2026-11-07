@@ -31,6 +31,7 @@ public class NotificationController {
     }
 
     @GetMapping("/stream")
+    @org.springframework.transaction.annotation.Transactional(readOnly=true)
     public SseEmitter stream(Authentication authentication) {
         return notificationStreamService.subscribe(notificationService.getCurrentUserId(authentication));
     }

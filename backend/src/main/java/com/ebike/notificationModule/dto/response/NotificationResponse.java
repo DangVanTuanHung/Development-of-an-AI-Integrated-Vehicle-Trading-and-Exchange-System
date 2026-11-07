@@ -1,6 +1,6 @@
 package com.ebike.notificationModule.dto.response;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 public record NotificationResponse(
     Long id,
@@ -11,7 +11,7 @@ public record NotificationResponse(
     Long orderId,
     Long paymentId,
     boolean read,
-    LocalDateTime readAt,
-    LocalDateTime createdAt
+    OffsetDateTime readAt,
+    OffsetDateTime createdAt
 ) {
 }

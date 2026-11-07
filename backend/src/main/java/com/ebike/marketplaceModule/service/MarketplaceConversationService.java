@@ -25,14 +25,16 @@ public class MarketplaceConversationService {
     private final UserRepository users;
     private final Path storageRoot;
     private final ObjectMapper objectMapper;
+    private final MarketplaceCommunityService community;
     private final Map<String, Long> typingUsers = new ConcurrentHashMap<>();
 
     public MarketplaceConversationService(JdbcTemplate jdbc, UserRepository users,
-            @Value("${app.marketplace.storage.root}") String storageRoot, ObjectMapper objectMapper) {
+            @Value("${app.marketplace.storage.root}") String storageRoot, ObjectMapper objectMapper,MarketplaceCommunityService community) {
         this.jdbc = jdbc;
         this.users = users;
         this.storageRoot = Path.of(storageRoot).toAbsolutePath().normalize();
         this.objectMapper = objectMapper;
+        this.community=community;
     }
 
     @Transactional
@@ -41,6 +43,7 @@ public class MarketplaceConversationService {
         Map<String, Object> listing = one("select id, seller_id, title from marketplace.vehicle_listings where public_id=?", listingPublicId);
         long listingId = ((Number) listing.get("id")).longValue();
         long sellerId = ((Number) listing.get("seller_id")).longValue();
+        community.canContact(buyer.getId(),sellerId);
         if (sellerId == buyer.getId()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bạn không thể nhắn tin cho chính mình");
 
         List<Map<String, Object>> existing = jdbc.queryForList("""
@@ -89,6 +92,7 @@ public class MarketplaceConversationService {
             select c.public_id as "publicId", l.public_id as "listingPublicId", l.title as "listingTitle",
                    coalesce(nullif(trim(other_user.first_name || ' ' || other_user.last_name), ''), other_user.username) as "otherName",
                    other_user.avatar_url as "otherAvatarUrl", vi.public_url as "listingImageUrl", l.price as "listingPrice",
+                   other_user.id as "otherId",exists(select 1 from marketplace.user_blocks b where (b.user_id=mine.user_id and b.blocked_id=other_user.id) or (b.user_id=other_user.id and b.blocked_id=mine.user_id)) as blocked,
                    c.last_message_at as "lastMessageAt",
                    (select m.content from marketplace.messages m where m.conversation_id=c.id and m.deleted_at is null order by m.created_at desc limit 1) as "lastMessage",
                    (select count(*) from marketplace.messages m
@@ -108,6 +112,7 @@ public class MarketplaceConversationService {
     public Map<String, Object> send(String username, UUID conversationPublicId, String content) {
         User sender = requireUser(username);
         Long conversationId = requireMember(sender, conversationPublicId);
+        requireCanSend(sender.getId(),conversationId);
         String clean = content == null ? "" : content.trim();
         if (clean.isEmpty() || clean.length() > 2000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tin nhắn phải từ 1 đến 2000 ký tự");
         UUID publicId = UUID.randomUUID();
@@ -126,6 +131,7 @@ public class MarketplaceConversationService {
     public void setTyping(String username, UUID conversationPublicId, boolean typing) {
         User user = requireUser(username);
         Long conversationId = requireMember(user, conversationPublicId);
+        requireCanSend(user.getId(),conversationId);
         String key = conversationId + ":" + user.getId();
         if (typing) typingUsers.put(key, System.currentTimeMillis() + 4000);
         else typingUsers.remove(key);
@@ -145,6 +151,7 @@ public class MarketplaceConversationService {
     public Map<String, Object> sendAttachment(String username, UUID conversationPublicId, MultipartFile file) {
         User sender = requireUser(username);
         Long conversationId = requireMember(sender, conversationPublicId);
+        requireCanSend(sender.getId(),conversationId);
         if (file == null || file.isEmpty()) throw badRequest("Vui lòng chọn tệp");
         if (file.getSize() > 20L * 1024 * 1024) throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Tệp không được quá 20 MB");
         String mime = file.getContentType() == null ? "application/octet-stream" : file.getContentType().toLowerCase(Locale.ROOT);
@@ -169,6 +176,7 @@ public class MarketplaceConversationService {
     public Map<String, Object> sendLocation(String username, UUID conversationPublicId, double latitude, double longitude) {
         User sender = requireUser(username);
         Long conversationId = requireMember(sender, conversationPublicId);
+        requireCanSend(sender.getId(),conversationId);
         if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) throw badRequest("Vị trí không hợp lệ");
         try {
             String metadata = objectMapper.writeValueAsString(Map.of("latitude", latitude, "longitude", longitude));
@@ -178,6 +186,8 @@ public class MarketplaceConversationService {
             return message(id);
         } catch (Exception ex) { throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Không thể gửi vị trí", ex); }
     }
+
+    private void requireCanSend(long actor,long conversation){for(Long other:jdbc.queryForList("select user_id from marketplace.conversation_members where conversation_id=? and user_id<>?",Long.class,conversation,actor))community.canContact(actor,other);}
 
     private Map<String, Object> message(Long id) {
         return one("""

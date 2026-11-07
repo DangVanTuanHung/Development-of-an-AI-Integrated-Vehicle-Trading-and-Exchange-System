@@ -6,6 +6,7 @@ import org.springframework.cache.annotation.EnableCaching;
 
 @SpringBootApplication
 @EnableCaching
+@org.springframework.scheduling.annotation.EnableScheduling
 public class EBikeApplication {
     public static void main(String[] args) {
         SpringApplication.run(EBikeApplication.class, args);
